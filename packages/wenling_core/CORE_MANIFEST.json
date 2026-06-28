@@ -1,0 +1,42 @@
+[
+    {
+        "path":  "__init__.py",
+        "sha256":  "6e69d81707af9e3a785575e54b445ed01a0aea4f86e0f6b9b5e26996663206c8",
+        "bytes":  161
+    },
+    {
+        "path":  "game.py",
+        "sha256":  "4251d58f3eb9d2db5eccfe4c61fd31189e8c38d44d35b8362158d077a63e6b9d",
+        "bytes":  102715
+    },
+    {
+        "path":  "model.py",
+        "sha256":  "fdbaf96a56a4dea074f4d6cdb7531954bf32af04000535faf921039719d0e0ca",
+        "bytes":  16516
+    },
+    {
+        "path":  "protocol.py",
+        "sha256":  "72a8f5eb7447163e4067ff844f5ba402737fe6b8332d50ab6a71c8a658436f0d",
+        "bytes":  297
+    },
+    {
+        "path":  "rules.py",
+        "sha256":  "b709c4266703da4b1e1bdd293fe00055aea13f9e0795cc46cf2d9747640ad44f",
+        "bytes":  27784
+    },
+    {
+        "path":  "tile_efficiency.py",
+        "sha256":  "bc6217706d4fdade9d894d2d1c425eeef9253a46834932eb8b0fc982bc3948e8",
+        "bytes":  53774
+    },
+    {
+        "path":  "tiles.py",
+        "sha256":  "fea4442331554c5296bb17f8fd9940f547cf3091e53128b6789bcb2a496912df",
+        "bytes":  3749
+    },
+    {
+        "path":  "validation.py",
+        "sha256":  "46722d677b6603059721c1e48549e368264be22c77684ce593392ce9cd161cc7",
+        "bytes":  3985
+    }
+]

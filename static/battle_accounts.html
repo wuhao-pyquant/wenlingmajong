@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>温岭麻将 账号数据库</title>
+    <link rel="stylesheet" href="/styles.css?v=20260624-battle-app-11" />
+  </head>
+  <body class="standalone-page">
+    <main class="standalone-shell account-admin-shell">
+      <header class="standalone-head">
+        <div>
+          <h1>账号数据库</h1>
+          <p>这里查看人类账号、固定 AI 账号，以及长期/今日对局统计。</p>
+        </div>
+        <nav class="standalone-links">
+          <a href="/battle-login">对战登录</a>
+          <a href="/battle">进入对战</a>
+        </nav>
+      </header>
+
+      <section class="standalone-card">
+        <div class="battle-login-row">
+          <label>新账号
+            <input id="adminAccountInput" class="wide-input" type="text" placeholder="输入账号名" />
+          </label>
+          <button id="adminCreateBtn" class="primary" type="button">创建账号</button>
+          <button id="adminRefreshBtn" type="button">刷新</button>
+          <button id="adminResetStatsBtn" class="warn" type="button">重置统计</button>
+        </div>
+        <div id="adminDbInfo" class="lobby-status"></div>
+      </section>
+
+      <section class="standalone-card">
+        <div id="adminAccounts"></div>
+      </section>
+    </main>
+    <script src="/battle_accounts.js?v=20260624-battle-app-11"></script>
+  </body>
+</html>

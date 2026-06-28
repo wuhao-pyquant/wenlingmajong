@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>温岭麻将人机对战</title>
+    <script>window.WENLING_APP_MODE = "battle";</script>
+    <link rel="stylesheet" href="/styles.css?v=20260625-battle-room-3" />
+    <link rel="stylesheet" href="/battle_layout.css?v=20260626-battle-layout-1" />
+  </head>
+  <body class="battle-app-mode">
+    <main class="app-shell">
+      <header class="topbar app-header">
+        <div>
+          <h1>温岭麻将</h1>
+          <div id="roundMeta" class="meta"></div>
+        </div>
+      </header>
+
+      <section id="gameView" class="view game-page active">
+        <section id="battleLoginPanel" class="battle-login-panel" hidden></section>
+        <section class="topbar game-toolbar">
+          <div class="top-actions">
+            <button id="newRoundBtn" class="primary" type="button" hidden>准备</button>
+          </div>
+        </section>
+
+        <section class="game-layout game-battle-layout">
+          <section class="table-zone">
+            <section class="mahjong-table" aria-label="温岭麻将牌桌">
+              <div id="roomMenu" class="room-menu">
+                <button id="roomMenuBtn" class="room-menu-button" type="button" aria-expanded="false">房间</button>
+                <div id="roomMenuPanel" class="room-menu-panel" hidden>
+                  <button id="playerStatsBtn" type="button">对局统计</button>
+                  <button id="bugReportBtn" type="button">举报问题</button>
+                  <div id="bugReportStatus" class="bug-report-status" aria-live="polite"></div>
+                  <button id="resetMatchBtn" type="button">重置房间</button>
+                  <button id="exitRoomBtn" type="button">退出房间</button>
+                </div>
+              </div>
+              <div id="players" class="players-grid"></div>
+              <div id="tableDiscards" class="table-discards"></div>
+              <div class="table-corner-status">
+                <div class="center-dice">东</div>
+                <div id="tablePhaseBanner" class="table-phase-banner"></div>
+              </div>
+              <div id="tableCenterInfo" class="table-center-info"></div>
+              <div id="battleFocus" class="battle-focus"></div>
+              <div id="settlementPopup" class="settlement-popup"></div>
+              <div id="playerStatsModal" class="player-stats-modal" hidden>
+                <div class="player-stats-panel">
+                  <div class="player-stats-head">
+                    <strong>玩家对局统计</strong>
+                    <button id="playerStatsCloseBtn" type="button">关闭</button>
+                  </div>
+                  <div id="playerStatsBody" class="player-stats-body"></div>
+                </div>
+              </div>
+              <div id="bugReportModal" class="bug-report-modal" hidden>
+                <form id="bugReportForm" class="bug-report-panel">
+                  <div class="bug-report-head">
+                    <strong>举报本局问题</strong>
+                    <button id="bugReportCancelBtn" type="button">关闭</button>
+                  </div>
+                  <div id="bugReportRoundMeta" class="bug-report-round-meta"></div>
+                  <label for="bugReportNote">问题说明（可留空）</label>
+                  <textarea id="bugReportNote" maxlength="2000" rows="5" placeholder="例如：碰牌后牌局卡住、舍牌顺序错误、结算点数异常"></textarea>
+                  <div id="bugReportModalStatus" class="bug-report-modal-status" aria-live="polite"></div>
+                  <div class="bug-report-actions">
+                    <button id="bugReportSubmitBtn" class="primary" type="submit">保存问题报告</button>
+                  </div>
+                </form>
+              </div>
+              <div id="actionBar" class="action-bar"></div>
+              <div id="hand" class="hand-row"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/battle_app.js?v=20260627-bug-report-modal-2"></script>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>温岭麻将 对战登录</title>
+    <link rel="stylesheet" href="/styles.css?v=20260625-battle-room-3" />
+  </head>
+  <body class="standalone-page">
+    <main class="standalone-shell lobby-shell">
+      <header class="standalone-head">
+        <div>
+          <h1>温岭麻将人机对战</h1>
+          <p>先登录账号并选择座位。空位默认由固定 AI 接管，所有人类玩家准备后开局。</p>
+        </div>
+        <nav class="standalone-links">
+          <a href="/battle/accounts">账号数据库</a>
+        </nav>
+      </header>
+
+      <section class="standalone-card">
+        <div class="battle-login-row lobby-account-row">
+          <label>账号名
+            <input id="lobbyAccountInput" class="wide-input" type="text" autocomplete="username" placeholder="输入账号名" />
+          </label>
+          <button id="lobbyRegisterBtn" type="button">注册</button>
+          <button id="lobbyLoginBtn" class="primary" type="button">登录</button>
+          <span id="lobbyAccountTag" class="tag"></span>
+        </div>
+        <div id="lobbyMessage" class="lobby-message"></div>
+      </section>
+
+      <section class="standalone-card">
+        <div class="lobby-section-head">
+          <strong>选择座位</strong>
+          <span>下 / 右 / 上 / 左 四个位置，空位显示本局默认 AI。</span>
+        </div>
+        <div id="lobbySeatGrid" class="battle-seat-grid lobby-seat-grid"></div>
+        <div id="lobbyKickList" class="lobby-kick-list"></div>
+      </section>
+
+      <section class="standalone-card">
+        <div class="battle-login-row">
+          <button id="lobbyReadyBtn" class="gold" type="button">准备</button>
+          <button id="lobbyLeaveBtn" type="button">离座</button>
+          <button id="lobbyEnterBtn" class="primary" type="button">进入对战</button>
+        </div>
+        <div id="lobbyStatus" class="lobby-status"></div>
+      </section>
+    </main>
+    <script src="/battle_lobby.js?v=20260625-battle-room-3"></script>
+  </body>
+</html>

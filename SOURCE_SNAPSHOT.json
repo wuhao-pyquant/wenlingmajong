@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "source_root": "C:\\Users\\e\\Documents\\Codex\\2026-05-21\\files-mentioned-by-the-user-md",
+  "created_at": "2026-06-28T15:59:41.753726+08:00",
+  "baseline_tests": {
+    "command": "python -m unittest discover -s tests -v",
+    "tests": 130,
+    "result": "passed"
+  },
+  "files": [
+    {
+      "path": "_apply2.py",
+      "bytes": 1547,
+      "sha256": "1af900b99b182b0cf6760e275db8cc7bc0a24ed8599aac8015c27269c38b3814"
+    },
+    {
+      "path": "_fix_html.py",
+      "bytes": 842,
+      "sha256": "cc5a3b1a150e835adf538a08530a807fd5f71f96700f4f395f411421a5508fad"
+    },
+    {
+      "path": "check_ai_env.ps1",
+      "bytes": 252,
+      "sha256": "19262687eee61a770c6c5eb448cb1df4d0b7a5f0c9635e7cb9d4a756cd176663"
+    },
+    {
+      "path": "check_ai_env.py",
+      "bytes": 737,
+      "sha256": "191a3efd2201d64c2768fefb5533a37b3282756f7c39a8db017493c4721d8733"
+    },
+    {
+      "path": "launch_server.py",
+      "bytes": 4414,
+      "sha256": "a432f01ba626d5e2f26c448cc6231951f08596119c5d61a112f05619b6977f11"
+    },
+    {
+      "path": "python_resolver.ps1",
+      "bytes": 1665,
+      "sha256": "5277bdbfc1912a319cc71a7e48ac7aa4ff1eecc3c90286ce1620eda8c46103d4"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4097,
+      "sha256": "e3c7e165b31b4176ccbe9f7aed3fb57f86607766615d5d169187fd1164d17acb"
+    },
+    {
+      "path": "requirements-strong-ai.txt",
+      "bytes": 146,
+      "sha256": "8252b86d9128c6e32f9492c3b7847e6f65f801360e3d431fd837ee46f0f57157"
+    },
+    {
+      "path": "restart_server.ps1",
+      "bytes": 1412,
+      "sha256": "4b036b153486c3e08c54f53ff7a1e1206b96c752a4c2a2715039390d1e6f0c65"
+    },
+    {
+      "path": "run.ps1",
+      "bytes": 411,
+      "sha256": "925be4f21ede48692a18eeba4b273ce0af7f95a4d6694fa238440ca01f94b9b0"
+    },
+    {
+      "path": "scripts/compare_luck_scoring_models.py",
+      "bytes": 34830,
+      "sha256": "b902685536e2a099eb56352b97f157ca8f91b6d7db8715ace69acbe9e7eca4bd"
+    },
+    {
+      "path": "scripts/generate_selfplay_distribution_viz.py",
+      "bytes": 31894,
+      "sha256": "6e9f286466c6bb53eec2004c7420487125bd77553d675034eb9fb32eb2a2e408"
+    },
+    {
+      "path": "scripts/train_luck_impact_model.py",
+      "bytes": 40286,
+      "sha256": "a33148cc2856fcb1fe96dcc7e093116111aadc5e0115024f8b0737e4f0241af5"
+    },
+    {
+      "path": "start_dmc_long.ps1",
+      "bytes": 2236,
+      "sha256": "4d11aee44a77d592b4ba05086086587c3cbd80b2cddcefa6ef646c06cba31344"
+    },
+    {
+      "path": "static/app.js",
+      "bytes": 158940,
+      "sha256": "516799c533b64e462536b67b153449933a10085a20a1e9a83bde56817681cfb4"
+    },
+    {
+      "path": "static/battle.html",
+      "bytes": 4248,
+      "sha256": "5aa40e0426a7e4dbed0405975f5e09e6a1a0b78f80b96463008555c9b3c528d0"
+    },
+    {
+      "path": "static/battle_accounts.html",
+      "bytes": 1509,
+      "sha256": "8e4ae6cb94962215c903f16d014d51fb9fe261d81f54fbf82c9e50705fb6e51f"
+    },
+    {
+      "path": "static/battle_accounts.js",
+      "bytes": 3870,
+      "sha256": "0e0f5917feb30b4da05075308959594ad16f4e4e86dc6057231989d82a32999e"
+    },
+    {
+      "path": "static/battle_app.js",
+      "bytes": 89023,
+      "sha256": "69013c5dba39cc532b37effc7c383abf00724e942af730f50a998bbd60138c4d"
+    },
+    {
+      "path": "static/battle_layout.css",
+      "bytes": 11495,
+      "sha256": "dbebd0f1d1360629a39790defa7fa6a5bd3239a58f2bbb0ff726920c29030ab5"
+    },
+    {
+      "path": "static/battle_lobby.js",
+      "bytes": 9701,
+      "sha256": "e5b406681028b0b87273c47a626a6186fff3a1875fe8128812834f99065ab5da"
+    },
+    {
+      "path": "static/battle_login.html",
+      "bytes": 2224,
+      "sha256": "50484dcb6280a7cba1640ece59fb367848fd8e292f3ddd057bcd98f447b91bc9"
+    },
+    {
+      "path": "static/ev_training_flow.html",
+      "bytes": 30398,
+      "sha256": "0fa4950a5c85a27aa94909834ad44101d365c20bdf2dd85b6fe1360a8769abd5"
+    },
+    {
+      "path": "static/index.html",
+      "bytes": 12444,
+      "sha256": "9f0b27dd784816f356cd8a71dfe5229d9423b2962c9f9f7187754a29c80b471b"
+    },
+    {
+      "path": "static/luck_impact_model_viz.html",
+      "bytes": 1296979,
+      "sha256": "e2e3bd8288c6a4e7690b611ca9893b506575f195110da9571486efc414c226ab"
+    },
+    {
+      "path": "static/luck_model_comparison_viz.html",
+      "bytes": 38151,
+      "sha256": "35a4fa1c2f6c92df2f42da5ab3fe231725d33b48fa64466518ae7b02b7766ead"
+    },
+    {
+      "path": "static/selfplay_distribution_viz.html",
+      "bytes": 35208,
+      "sha256": "679b8e553330a1130798dcdd6f513b8fefc439fc477f89db9f0b039f812ad1b8"
+    },
+    {
+      "path": "static/state_vectors.html",
+      "bytes": 23337,
+      "sha256": "0b67b88434b9c2be3fec44a57b6bb60a9280a932a0f5750cd9f7258d13f01dc7"
+    },
+    {
+      "path": "static/styles.css",
+      "bytes": 180022,
+      "sha256": "ba9a5608c5f7805f8847211260c02b079eb3cdc7a60303a1f3d348a2581c5f38"
+    },
+    {
+      "path": "static/training.html",
+      "bytes": 815,
+      "sha256": "16305d4857e79f6b99305f38c7fce6d617e358815c337795c83d5cf0cba807ae"
+    },
+    {
+      "path": "tests/__init__.py",
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "tests/test_bao_rules.py",
+      "bytes": 15320,
+      "sha256": "ddd0e8b51150f797973b4e2209281059714ab15e9af4172fe1d32f827c9fe5e6"
+    },
+    {
+      "path": "tests/test_battle_http.py",
+      "bytes": 30230,
+      "sha256": "6aa068948dd95fa4dcda1605f48f3aed0eb1c82524167842d8bb3aa18724aa14"
+    },
+    {
+      "path": "tests/test_battle_multiplayer.py",
+      "bytes": 56957,
+      "sha256": "21c32fde822f91779e51209eb8a99a27237bc46f137fd12a9d685995bf7519be"
+    },
+    {
+      "path": "tests/test_battle_stats.py",
+      "bytes": 5879,
+      "sha256": "1b1c40c226866a3a381e22183403582844a211e228d811b856fb20ebda2abea8"
+    },
+    {
+      "path": "tests/test_bug_reports.py",
+      "bytes": 3535,
+      "sha256": "0bb1d8ebad7509189f25b68232cc44b2cb4a73bd90d39e0708bff829119851bc"
+    },
+    {
+      "path": "tests/test_expert_selfplay.py",
+      "bytes": 4207,
+      "sha256": "81ba78d7eeef28e5ad334bf26e15521eeaca343f54f90447f8b036e95fc7fd81"
+    },
+    {
+      "path": "tests/test_tile_efficiency.py",
+      "bytes": 39734,
+      "sha256": "5cdbac0d5f1faf295138c22557033e456a6fdf1a62858b991a0651ed6e07184a"
+    },
+    {
+      "path": "train_ai.py",
+      "bytes": 6908,
+      "sha256": "d3f6f8f4d64a56480b01f6f30f815df1568c0fcedd5944a68de0bbec988a8b2b"
+    },
+    {
+      "path": "train_dmc.ps1",
+      "bytes": 779,
+      "sha256": "e8a92b5786198359c0dab5c0925f7580161029b6de9b41a4ae50bc8e657581f7"
+    },
+    {
+      "path": "train_torch.ps1",
+      "bytes": 576,
+      "sha256": "53d9cad2fb3417d9eadb7417a7602f5125bb5335e3616e6e3583241e28c6f66e"
+    },
+    {
+      "path": "TRAINING_PLAN.md",
+      "bytes": 4098,
+      "sha256": "c47422dedefd39e96d225853ec988565da0c510db77fd458d92f106c127f87b1"
+    },
+    {
+      "path": "wenling_mahjong/__init__.py",
+      "bytes": 56,
+      "sha256": "2d3216257296f89eff51df603e017ecb2603f2648cb3a531a4394ff4df218989"
+    },
+    {
+      "path": "wenling_mahjong/__main__.py",
+      "bytes": 129,
+      "sha256": "26e2a418ba1d3cc68c0b7977ad5bfc5160966e5252b7d9fc0651bef7cda61df8"
+    },
+    {
+      "path": "wenling_mahjong/action_space.py",
+      "bytes": 7074,
+      "sha256": "67990892b30b0daba5c521829586e35450c9101b06537b64884fadd593f2b796"
+    },
+    {
+      "path": "wenling_mahjong/battle_app.py",
+      "bytes": 65873,
+      "sha256": "a755673323a19ae1b2b14dd4552a90166da83059775cd9d9f85888d3b0944295"
+    },
+    {
+      "path": "wenling_mahjong/battle_db.py",
+      "bytes": 11309,
+      "sha256": "ad82b2365945c69345c718fc37d1bf1fa6283fd70a950f3ffb8410264308cd6e"
+    },
+    {
+      "path": "wenling_mahjong/benchmark.py",
+      "bytes": 35324,
+      "sha256": "4ec6e17924a872de127aaed290a6f4a5e42d5d8de22f0296c9372166c651f415"
+    },
+    {
+      "path": "wenling_mahjong/bug_reports.py",
+      "bytes": 6622,
+      "sha256": "cea58170c4573e33fc962b1b27bb7f425a39a89b8d76e14aac4d1f3adbb91155"
+    },
+    {
+      "path": "wenling_mahjong/dmc_model.py",
+      "bytes": 22362,
+      "sha256": "81da66d0b0da45b9db6e0c66e4f98512fa53b2c72123d53c64189be6de43e5e4"
+    },
+    {
+      "path": "wenling_mahjong/dmc_training.py",
+      "bytes": 33603,
+      "sha256": "97356d75cc993b7f462184c2c0a430fe70f5b9a7895c4caa1c4cb83040a5d472"
+    },
+    {
+      "path": "wenling_mahjong/eval_history.py",
+      "bytes": 3075,
+      "sha256": "80a2514787d28cb5521a97580e151d639de9744c022550f2f2603afbd14b1370"
+    },
+    {
+      "path": "wenling_mahjong/expert_selfplay.py",
+      "bytes": 47374,
+      "sha256": "28cdd4613ef8dd9af2602b9c81520d517a3de2a4c91dfcb1486faa0d675e2c46"
+    },
+    {
+      "path": "wenling_mahjong/game.py",
+      "bytes": 102715,
+      "sha256": "4251d58f3eb9d2db5eccfe4c61fd31189e8c38d44d35b8362158d077a63e6b9d"
+    },
+    {
+      "path": "wenling_mahjong/model.py",
+      "bytes": 16516,
+      "sha256": "fdbaf96a56a4dea074f4d6cdb7531954bf32af04000535faf921039719d0e0ca"
+    },
+    {
+      "path": "wenling_mahjong/neural_model.py",
+      "bytes": 15243,
+      "sha256": "4270bd27afe1cdaf13323107e4de8287919ce374f32f69c3bb3b3d84e96db314"
+    },
+    {
+      "path": "wenling_mahjong/rules.py",
+      "bytes": 27784,
+      "sha256": "b709c4266703da4b1e1bdd293fe00055aea13f9e0795cc46cf2d9747640ad44f"
+    },
+    {
+      "path": "wenling_mahjong/server.py",
+      "bytes": 60349,
+      "sha256": "1e12cac20a36194001c147bf7ee6a105ff0ef17b706be15a28acfffe042c9672"
+    },
+    {
+      "path": "wenling_mahjong/state_encoder.py",
+      "bytes": 26470,
+      "sha256": "d04e30b26be716b3c6878b1d9c977c7f5630b8bca9002e1098e2728249d4d8f8"
+    },
+    {
+      "path": "wenling_mahjong/strong_training.py",
+      "bytes": 36268,
+      "sha256": "fc82f5bcd7c41b9b114b041cdf351c152090dc79b2b5d34e4c13122bfe442343"
+    },
+    {
+      "path": "wenling_mahjong/tile_efficiency.py",
+      "bytes": 53774,
+      "sha256": "bc6217706d4fdade9d894d2d1c425eeef9253a46834932eb8b0fc982bc3948e8"
+    },
+    {
+      "path": "wenling_mahjong/tile_efficiency_perf.py",
+      "bytes": 4723,
+      "sha256": "de1a284e79f515b166244dbb2a3971750656c8e1fdfbb093f4063c7418667f06"
+    },
+    {
+      "path": "wenling_mahjong/tiles.py",
+      "bytes": 3749,
+      "sha256": "fea4442331554c5296bb17f8fd9940f547cf3091e53128b6789bcb2a496912df"
+    },
+    {
+      "path": "wenling_mahjong/training.py",
+      "bytes": 2256,
+      "sha256": "1180b7a7ac3a27588a2e18a3983b7383fd67b2fa4852217430c4833cfbc37ff6"
+    },
+    {
+      "path": "wenling_mahjong/training_manager.py",
+      "bytes": 96125,
+      "sha256": "04f097a7ebef6406a5c4c546ddffcba346cb9b136e674fff3e355f11a2bdd7fc"
+    },
+    {
+      "path": "wenling_mahjong/validation.py",
+      "bytes": 5361,
+      "sha256": "40214984e5637fb96eba53b5eb8b637abd434a9f6708628d6b8f5c76c63e25c7"
+    }
+  ]
+}
