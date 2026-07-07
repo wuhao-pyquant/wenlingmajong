@@ -16,4 +16,15 @@ data/*
 .env
 *.key
 *.pem
+node_modules/
+.agents/
+.codex/
+.superpowers/
 android/
+android-host/.gradle/
+android-host/.idea/
+android-host/.kotlin/
+android-host/**/build/
+android-host/local.properties
+android-host/**/local.properties
+tools/android-build/

@@ -1,0 +1,2355 @@
+/* Battle geometry v7: Canvas world layer using battle_table_model coordinates.
+   The active player hand and interactive popups remain DOM-controlled. */
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] {
+  --v7-canvas-z: 14;
+  --v7-center-overlay-z: 58;
+  --v7-frosted-felt: #0b6b43;
+  --v7-frosted-felt-dark: #063b2b;
+  --v7-wood-dark: #2f170d;
+  --v7-wood-mid: #6a3c21;
+  --v7-wood-light: #9a6a38;
+  border: 0 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode:not(.battle-mobile-table) .mahjong-table[data-geometry="v7"] {
+  aspect-ratio: 1500 / 780 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"]::before {
+  z-index: 1 !important;
+  inset: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"]::after {
+  z-index: 2 !important;
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #tableCanvas {
+  position: absolute;
+  z-index: var(--v7-canvas-z);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  image-rendering: auto;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .table-world-layer {
+  z-index: 40 !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #players,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #tableDiscards,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .table-corner-status {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .table-center-info {
+  z-index: var(--v7-center-overlay-z) !important;
+  filter: none !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-center-canvas="1"] .table-center-info {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-hud-grid {
+  grid-template-columns: 72px minmax(92px, 1fr) 72px !important;
+  grid-template-rows: 42px minmax(54px, 1fr) 42px !important;
+  padding: 5px 8px !important;
+  color: #f7f1d6 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.92), 0 0 8px rgba(0, 20, 12, 0.7) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-card {
+  grid-template-rows: 23px 14px 13px !important;
+  gap: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-wind {
+  width: 23px !important;
+  height: 23px !important;
+  font-size: 16px !important;
+  line-height: 23px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-name {
+  max-width: 84px !important;
+  font-size: 12px !important;
+  line-height: 14px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-chip {
+  max-width: 84px !important;
+  font-size: 11.5px !important;
+  line-height: 13px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-room-count {
+  height: 18px !important;
+  font-size: 12px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-room-count strong {
+  font-size: 21px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core {
+  grid-template-rows: 18px 1fr !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core-row {
+  grid-template-columns: minmax(42px, 1fr) minmax(46px, 1fr) !important;
+  gap: 3px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-de-tile .tile.small,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-bao-mark {
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 48px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-wall-remaining {
+  grid-template-rows: 10px 28px 8px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-wall-remaining > strong {
+  font-size: 27px !important;
+}
+
+@media (max-width: 900px) {
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-hud-grid {
+    grid-template-columns: 60px minmax(74px, 1fr) 60px !important;
+    grid-template-rows: 36px minmax(46px, 1fr) 36px !important;
+    padding: 4px 6px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-card {
+    grid-template-rows: 20px 12px 11px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-wind {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-name,
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-seat-chip {
+    max-width: 70px !important;
+    font-size: 10.5px !important;
+    line-height: 11px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-room-count strong {
+    font-size: 20px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-de-tile .tile.small,
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-bao-mark {
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 42px !important;
+  }
+
+  body.battle-app-mode .mahjong-table[data-renderer="canvas"] .center-core .center-wall-remaining > strong {
+    font-size: 23px !important;
+  }
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .player-hud-layer {
+  z-index: 72 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #hand.hand-row,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .action-bar {
+  z-index: 86 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #hand.hand-row {
+  left: calc(50% + (var(--active-left-public-w, 0px) - var(--active-right-public-w, 0px)) / 2) !important;
+  width: min(var(--active-hand-safe-width, calc(100% - 16px)), calc(100% - 16px)) !important;
+  gap: 0 !important;
+  justify-content: center !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #hand.hand-row::-webkit-scrollbar {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #hand .tile + .tile:not(.new-draw) {
+  margin-left: var(--active-tile-gap, 0px) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] #hand .tile.new-draw {
+  margin-left: var(--active-draw-gap, 11px) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"] .room-menu {
+  z-index: 116 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"] #tableCanvas {
+  display: none !important;
+}
+
+/* DOM + v7: keep the v7 table model, but draw with DOM/SVG tiles for clarity. */
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] {
+  --v7-dom-z-world: 40;
+  --v7-dom-z-center: 54;
+  --v7-dom-z-hand: 86;
+  --v7-flat-felt: #0b6b43;
+  --v7-wood-dark: #2f170d;
+  --v7-wood-mid: #6a3c21;
+  --v7-wood-light: #9a6a38;
+  border: 0 !important;
+  background-color: var(--v7-wood-mid) !important;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 221, 150, 0.13) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(90deg, rgba(45, 17, 7, 0.32) 0 2px, transparent 2px 44px),
+    linear-gradient(145deg, var(--v7-wood-dark), var(--v7-wood-light) 48%, #3a1c10) !important;
+  box-shadow:
+    inset 0 0 0 8px rgba(22, 8, 3, 0.34),
+    inset 0 0 0 18px rgba(255, 212, 128, 0.08) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"]::before {
+  z-index: 1 !important;
+  inset: 18px !important;
+  border: 1px solid rgba(247, 217, 139, 0.28) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 52% 42%, rgba(59, 176, 120, 0.28), transparent 34%),
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 230, 0.08), transparent 26%),
+    repeating-linear-gradient(0deg, rgba(226, 255, 222, 0.08) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(90deg, rgba(0, 28, 18, 0.1) 0 1px, transparent 1px 31px),
+    linear-gradient(145deg, #063b2b, var(--v7-flat-felt) 52%, #08452f) !important;
+  background-color: var(--v7-flat-felt) !important;
+  transform: none !important;
+  box-shadow:
+    inset 0 0 48px rgba(0, 18, 11, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"]::after {
+  z-index: 2 !important;
+  inset: 18px !important;
+  height: auto !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 48% 44%, transparent 0 42%, rgba(0, 21, 13, 0.28) 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 176, 0.08) !important;
+  opacity: 1 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer {
+  z-index: var(--v7-dom-z-world) !important;
+  inset: 0 !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  transform: none !important;
+  transform-origin: 50% 50% !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer > *,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer #players.players-grid,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer #tableDiscards,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .table-seat,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-surface {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: visible !important;
+  transform: none !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .player-head,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .player-line,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-corner-status {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .player-hud-layer .corner-player-head {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .dom-v7-positioned {
+  position: absolute !important;
+  inset: auto !important;
+  margin: 0 !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  transform-origin: center center !important;
+  box-sizing: border-box !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned {
+  z-index: 32 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 2px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.dom-v7-positioned:empty {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned {
+  gap: 0 !important;
+  z-index: 26 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned .tile-back,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned .tile.small {
+  flex: 0 0 var(--remote-tile-w) !important;
+  width: var(--remote-tile-w) !important;
+  min-width: var(--remote-tile-w) !important;
+  height: var(--remote-tile-h) !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned .tile-back + .tile-back {
+  margin-left: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned {
+  gap: 1px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .flower-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned {
+  z-index: 36 !important;
+  gap: 0 !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-public-zone,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .seat-public-melds {
+  position: static !important;
+  display: contents !important;
+  transform: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .flower-row.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .tile.back {
+  flex: 0 0 var(--meld-tile-w) !important;
+  width: var(--meld-tile-w) !important;
+  min-width: var(--meld-tile-w) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  filter: none !important;
+  transform: none !important;
+  image-rendering: auto !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-set {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0 !important;
+  margin: 0 2px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-set:last-child {
+  margin-right: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-type {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .claimed-discard-slot {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 var(--meld-tile-h) !important;
+  width: var(--meld-tile-h) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .claimed-discard-slot .tile.small.claimed-discard {
+  flex: 0 0 var(--meld-tile-w) !important;
+  width: var(--meld-tile-w) !important;
+  min-width: var(--meld-tile-w) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  transform: rotate(90deg) !important;
+  transform-origin: center center !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned {
+  z-index: 34 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-label,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-empty {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-tiles {
+  display: grid !important;
+  grid-template-columns: repeat(var(--river-cols, 6), var(--river-face-w)) !important;
+  grid-auto-rows: var(--river-face-h) !important;
+  gap: var(--river-gap-y) var(--river-gap-x) !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  transform: none !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-last {
+  flex: 0 0 var(--river-face-w) !important;
+  width: var(--river-face-w) !important;
+  min-width: var(--river-face-w) !important;
+  height: var(--river-face-h) !important;
+  margin: 0 !important;
+  border-radius: 3px !important;
+  filter: none !important;
+  transform: none !important;
+  image-rendering: auto !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-last {
+  outline: 2px solid rgba(255, 213, 95, 0.92) !important;
+  outline-offset: 1px !important;
+  z-index: 2 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned {
+  z-index: var(--v7-dom-z-center) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 8px !important;
+  border: 2px solid rgba(231, 184, 75, 0.76) !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(145deg, rgba(23, 40, 38, 0.96), rgba(4, 29, 24, 0.96)) !important;
+  box-shadow:
+    0 8px 18px rgba(0, 13, 8, 0.34),
+    inset 0 0 0 1px rgba(255, 247, 187, 0.08) !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: 92px minmax(118px, 1fr) 92px !important;
+  grid-template-rows: 52px minmax(78px, 1fr) 52px !important;
+  gap: 4px !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  gap: 1px !important;
+  grid-template-rows: 26px 17px 16px !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 26px !important;
+  height: 26px !important;
+  font-size: 17px !important;
+  line-height: 26px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  max-width: 88px !important;
+  font-size: 12px !important;
+  line-height: 15px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count {
+  height: 20px !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count strong {
+  font-size: 22px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core {
+  grid-template-rows: 20px 1fr !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core-row {
+  grid-template-columns: minmax(52px, 1fr) minmax(56px, 1fr) !important;
+  gap: 4px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-de-tile .tile.small,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-bao-mark {
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 50px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining > strong {
+  font-size: 29px !important;
+  line-height: 30px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand.hand-row,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .action-bar {
+  z-index: var(--v7-dom-z-hand) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand.hand-row {
+  gap: 0 !important;
+  width: min(var(--active-hand-safe-width, calc(100% - 8px)), calc(100% - 8px)) !important;
+  justify-content: center !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand.hand-row::-webkit-scrollbar {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand .tile + .tile:not(.new-draw) {
+  margin-left: var(--active-tile-gap, 0px) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand .tile.new-draw {
+  margin-left: var(--active-draw-gap, 14px) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] #hand .tile-img,
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .tile-img {
+  image-rendering: auto !important;
+  transform: translateZ(0);
+}
+
+/* Hybrid v7: keep canvas background/center, but render table tiles as DOM SVG images. */
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-tile-renderer="dom"] #players,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-tile-renderer="dom"] #tableDiscards {
+  display: block !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer {
+  z-index: var(--v7-dom-z-world, 40) !important;
+  inset: 0 !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  transform: none !important;
+  transform-origin: 50% 50% !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer > *,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer #players.players-grid,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer #tableDiscards,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .table-seat,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-surface {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: visible !important;
+  transform: none !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .player-head,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .player-line,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-corner-status {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .dom-v7-positioned {
+  position: absolute !important;
+  inset: auto !important;
+  margin: 0 !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  transform-origin: center center !important;
+  box-sizing: border-box !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned {
+  z-index: 32 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 2px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.dom-v7-positioned:empty {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned {
+  gap: 0 !important;
+  z-index: 26 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned .tile-back,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned .tile.small {
+  flex: 0 0 var(--remote-tile-w) !important;
+  width: var(--remote-tile-w) !important;
+  min-width: var(--remote-tile-w) !important;
+  height: var(--remote-tile-h) !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.concealed.dom-v7-positioned .tile-back + .tile-back {
+  margin-left: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.revealed-hand.dom-v7-positioned {
+  gap: 1px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .flower-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned {
+  z-index: 36 !important;
+  gap: 0 !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-public-zone,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-public-melds {
+  position: static !important;
+  display: contents !important;
+  transform: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .flower-row.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .tile.back {
+  flex: 0 0 var(--meld-tile-w) !important;
+  width: var(--meld-tile-w) !important;
+  min-width: var(--meld-tile-w) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  filter: none !important;
+  transform: none !important;
+  image-rendering: auto !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-set {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0 !important;
+  margin: 0 2px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-set:last-child {
+  margin-right: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .meld-type {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .claimed-discard-slot {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 var(--meld-tile-h) !important;
+  width: var(--meld-tile-h) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned .claimed-discard-slot .tile.small.claimed-discard {
+  flex: 0 0 var(--meld-tile-w) !important;
+  width: var(--meld-tile-w) !important;
+  min-width: var(--meld-tile-w) !important;
+  height: var(--meld-tile-h) !important;
+  margin: 0 !important;
+  transform: rotate(90deg) !important;
+  transform-origin: center center !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned {
+  z-index: 34 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-label,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-empty {
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-tiles {
+  display: grid !important;
+  grid-template-columns: repeat(var(--river-cols, 6), var(--river-face-w)) !important;
+  grid-auto-rows: var(--river-face-h) !important;
+  gap: var(--river-gap-y) var(--river-gap-x) !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  transform: none !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-last {
+  flex: 0 0 var(--river-face-w) !important;
+  width: var(--river-face-w) !important;
+  min-width: var(--river-face-w) !important;
+  height: var(--river-face-h) !important;
+  margin: 0 !important;
+  border-radius: 3px !important;
+  filter: none !important;
+  transform: none !important;
+  image-rendering: auto !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-last {
+  outline: 2px solid rgba(255, 213, 95, 0.92) !important;
+  outline-offset: 1px !important;
+  z-index: 2 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] #hand .tile-img,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .tile-img {
+  image-rendering: auto !important;
+  transform: translateZ(0);
+}
+
+/* Final v7 rule: model boxes define placement, JS/model fitScale defines size.
+   Do not hide overflow here; clipping masks layout problems and cuts tiles.
+   If content cannot fit, reduce tile/gap size in JS/model instead. */
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .seat-tile-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .flower-row.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .meld-row.dom-v7-positioned {
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .discard-tiles {
+  overflow: visible !important;
+}
+
+/* v7 model boxes own the discard-zone position. Legacy river rules centered
+   .discard-tiles with absolute left/top offsets; that made "start" mean the
+   grid's own top-left, not the discard box top-left. In v7 the grid must fill
+   the model box and start at the box origin. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned > .discard-tiles,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned > .discard-tiles {
+  position: static !important;
+  inset: auto !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  transform-origin: 0 0 !important;
+  align-self: flex-start !important;
+  justify-self: flex-start !important;
+  margin: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Desktop fit: width-first scale, then extend logical height when the viewport
+   is taller than the scaled 1500x780 content. Tiles keep their proportions;
+   only the vertical empty bands gain space. */
+body.battle-app-mode.battle-desktop-table,
+body.battle-app-mode.battle-desktop-table .app-shell,
+body.battle-app-mode.battle-desktop-table #gameView,
+body.battle-app-mode.battle-desktop-table .game-layout,
+body.battle-app-mode.battle-desktop-table .game-battle-layout,
+body.battle-app-mode.battle-desktop-table .table-zone {
+  width: var(--battle-desktop-vw, 100vw) !important;
+  height: var(--battle-desktop-vh, 100vh) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #0b6b43 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode.battle-desktop-table .app-shell {
+  position: fixed !important;
+  inset: 0 !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] {
+  --battle-content-h: var(--battle-desktop-content-h, 780px);
+  --battle-content-offset-y: calc((var(--battle-desktop-table-h, 780px) - var(--battle-content-h, 780px)) / 2);
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: var(--battle-desktop-table-w, 1500px) !important;
+  height: var(--battle-desktop-table-h, 780px) !important;
+  min-height: var(--battle-desktop-table-h, 780px) !important;
+  aspect-ratio: auto !important;
+  transform: translate(-50%, -50%) scale(var(--battle-desktop-scale, 1)) !important;
+  transform-origin: center center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-world-layer .tile.tile-selected-match {
+  position: relative !important;
+  z-index: 8 !important;
+  outline: 0 !important;
+  box-shadow: 0 0 0 3px #f8d35f, 0 10px 22px rgba(248, 211, 95, 0.38) !important;
+  filter:
+    brightness(1.12)
+    saturate(1.14)
+    drop-shadow(0 9px 5px rgba(0, 18, 10, 0.48)) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-world-layer .battle-seat-v7,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-world-layer .battle-seat-v7.active,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-world-layer .battle-seat-v7.human {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: inherit !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] #tableCanvas,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] #tableCanvas,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .table-world-layer,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .table-world-layer,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .player-hud-layer,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .player-hud-layer {
+  left: 0 !important;
+  right: 0 !important;
+  top: var(--battle-content-offset-y, 0px) !important;
+  bottom: auto !important;
+  width: 100% !important;
+  height: var(--battle-content-h, 780px) !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .room-menu,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu {
+  top: var(--battle-content-offset-y, 0px) !important;
+  bottom: auto !important;
+  height: var(--battle-content-h, 780px) !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] #hand.hand-row,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] #hand.hand-row {
+  bottom: calc(var(--battle-content-offset-y, 0px) + 7px) !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .action-bar {
+  bottom: calc(var(--battle-content-offset-y, 0px) + var(--active-tile-h, var(--hand-tile-h, 90px)) + 10px) !important;
+}
+
+/* Mobile browsers enter additional coarse-pointer CSS branches from older
+   layers. Keep v7's flat table and DOM center panel authoritative there too. */
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"],
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"] {
+  background: #0b6b43 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"]::before,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"]::after,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned {
+  display: block !important;
+  z-index: 64 !important;
+  box-sizing: border-box !important;
+  padding: 8px !important;
+  border: 2px solid rgba(231, 184, 75, 0.86) !important;
+  border-radius: 16px !important;
+  background: rgba(5, 38, 31, 0.96) !important;
+  box-shadow:
+    0 6px 16px rgba(0, 12, 8, 0.34),
+    inset 0 0 0 1px rgba(255, 247, 187, 0.12) !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-hud-grid,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: 92px minmax(112px, 1fr) 92px !important;
+  grid-template-rows: 52px minmax(74px, 1fr) 52px !important;
+  gap: 3px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 25px !important;
+  height: 25px !important;
+  line-height: 25px !important;
+  font-size: 17px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  max-width: 88px !important;
+  font-size: 12px !important;
+  line-height: 14px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-template-rows: 20px 1fr !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core-row,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core-row {
+  grid-template-columns: minmax(52px, 1fr) minmax(54px, 1fr) !important;
+  gap: 3px !important;
+}
+
+/* Final mobile viewport fix: old mobile branches rotated the whole app-shell
+   while v7 also scales the table internally. Real mobile browsers can then
+   show body/app/table backgrounds in different coordinate systems. v7 keeps
+   one unrotated viewport and centers the logical table inside it. */
+body.battle-app-mode.battle-mobile-table,
+body.battle-app-mode.battle-mobile-table .app-shell,
+body.battle-app-mode.battle-mobile-table #gameView,
+body.battle-app-mode.battle-mobile-table .game-layout,
+body.battle-app-mode.battle-mobile-table .game-battle-layout,
+body.battle-app-mode.battle-mobile-table .table-zone {
+  width: var(--battle-mobile-vw, 100vw) !important;
+  height: var(--battle-mobile-vh, 100vh) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #0b6b43 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode.battle-mobile-portrait .app-shell,
+body.battle-app-mode.battle-mobile-portrait #gameView,
+body.battle-app-mode.battle-mobile-portrait .game-layout,
+body.battle-app-mode.battle-mobile-portrait .game-battle-layout,
+body.battle-app-mode.battle-mobile-portrait .table-zone {
+  width: var(--battle-mobile-vw, 100vw) !important;
+  height: var(--battle-mobile-vh, 100vh) !important;
+  transform: none !important;
+  transform-origin: center center !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] {
+  --battle-content-h: var(--battle-mobile-content-h, 780px);
+  --battle-content-offset-y: calc((var(--battle-mobile-table-h, 780px) - var(--battle-content-h, 780px)) / 2);
+  left: 50% !important;
+  top: 50% !important;
+  width: var(--battle-mobile-table-w, 1500px) !important;
+  height: var(--battle-mobile-table-h, 780px) !important;
+  min-height: var(--battle-mobile-table-h, 780px) !important;
+  transform: translate(-50%, -50%) scale(var(--battle-mobile-scale, 1)) !important;
+  transform-origin: center center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+/* Enlarge all battle interaction frames/buttons for touch. "放大1倍" is
+   implemented as roughly 2x the previous touch target size. */
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .action-bar {
+  width: min(1320px, calc(100% - 32px)) !important;
+  min-height: 128px !important;
+  padding: 14px 22px !important;
+  gap: 18px !important;
+  border-radius: 24px !important;
+  bottom: calc(var(--battle-content-offset-y, 0px) + var(--active-tile-h, var(--hand-tile-h, 90px)) + 20px) !important;
+  z-index: 96 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .action-bar button,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .action-bar .tag {
+  min-width: 144px !important;
+  min-height: 112px !important;
+  padding: 0 36px !important;
+  border-radius: 24px !important;
+  font-size: 44px !important;
+  line-height: 1.05 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .action-bar .action-icon {
+  font-size: 40px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-button {
+  top: 18px !important;
+  right: 18px !important;
+  min-width: 148px !important;
+  min-height: 68px !important;
+  padding: 0 28px !important;
+  border-radius: 999px !important;
+  font-size: 28px !important;
+  z-index: 160 !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: rgba(255, 211, 91, 0.28) !important;
+  user-select: none !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu {
+  z-index: 160 !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  min-width: 680px !important;
+  padding: 40px !important;
+  gap: 28px !important;
+  border-radius: 30px !important;
+  z-index: 126 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-panel button,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .bug-report-panel button,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .settlement-popup button,
+body.battle-app-mode.battle-mobile-table .player-stats-panel button {
+  min-width: 240px !important;
+  min-height: 108px !important;
+  padding: 0 44px !important;
+  border-radius: 22px !important;
+  font-size: 40px !important;
+  line-height: 1.05 !important;
+}
+
+/* Keep phone portrait browsers using the horizontal table canvas size. The
+   app shell is the only rotated layer; table/page backgrounds are the same
+   flat green so there is no visible split between outer and inner pages. */
+body.battle-app-mode.battle-mobile-table .app-shell,
+body.battle-app-mode.battle-mobile-table #gameView,
+body.battle-app-mode.battle-mobile-table .game-layout,
+body.battle-app-mode.battle-mobile-table .game-battle-layout,
+body.battle-app-mode.battle-mobile-table .table-zone {
+  width: var(--battle-mobile-shell-w, 100vw) !important;
+  height: var(--battle-mobile-shell-h, 100vh) !important;
+  background: #0b6b43 !important;
+  background-color: #0b6b43 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.battle-app-mode.battle-mobile-portrait .app-shell {
+  width: var(--battle-mobile-shell-w, 100vh) !important;
+  height: var(--battle-mobile-shell-h, 100vw) !important;
+  transform: rotate(90deg) translateY(-100%) !important;
+  transform-origin: top left !important;
+}
+
+body.battle-app-mode.battle-mobile-portrait #gameView,
+body.battle-app-mode.battle-mobile-portrait .game-layout,
+body.battle-app-mode.battle-mobile-portrait .game-battle-layout,
+body.battle-app-mode.battle-mobile-portrait .table-zone {
+  width: var(--battle-mobile-shell-w, 100vh) !important;
+  height: var(--battle-mobile-shell-h, 100vw) !important;
+  transform: none !important;
+  transform-origin: center center !important;
+}
+
+/* Final center compaction: use the whole center box, reduce dead spacing, and
+   make names/chips readable after mobile table scaling. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned {
+  padding: 6px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  grid-template-columns: 112px minmax(142px, 1fr) 112px !important;
+  grid-template-rows: 60px minmax(92px, 1fr) 60px !important;
+  gap: 2px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 29px 20px 18px !important;
+  justify-items: center !important;
+  align-items: center !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  min-height: 29px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 29px !important;
+  height: 29px !important;
+  line-height: 29px !important;
+  font-size: 20px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  max-width: 106px !important;
+  font-size: 14px !important;
+  line-height: 16px !important;
+  font-weight: 900 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core {
+  grid-template-rows: 24px minmax(62px, 1fr) !important;
+  align-items: stretch !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count {
+  height: 24px !important;
+  font-size: 15px !important;
+  line-height: 22px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count strong {
+  font-size: 26px !important;
+  line-height: 24px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core-row {
+  grid-template-columns: minmax(62px, 1fr) minmax(66px, 1fr) !important;
+  gap: 2px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-de-tile .tile.small,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-bao-mark {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 62px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining {
+  grid-template-rows: 14px 34px 10px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining > span {
+  font-size: 13px !important;
+  line-height: 14px !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining > strong {
+  font-size: 34px !important;
+  line-height: 34px !important;
+}
+
+/* Close buttons need direct selectors: popup head rules are more specific than
+   broad mobile button rules in older layers. */
+body.battle-app-mode.battle-mobile-table #settlementCloseBtn,
+body.battle-app-mode.battle-mobile-table #playerStatsCloseBtn,
+body.battle-app-mode.battle-mobile-table #bugReportCancelBtn,
+body.battle-app-mode.battle-mobile-table #bugReportCloseBtn,
+body.battle-app-mode.battle-mobile-table .settlement-popup-head button,
+body.battle-app-mode.battle-mobile-table .player-stats-head button,
+body.battle-app-mode.battle-mobile-table .bug-report-head button {
+  min-width: 120px !important;
+  min-height: 54px !important;
+  padding: 0 22px !important;
+  border-radius: 12px !important;
+  font-size: 20px !important;
+  line-height: 1.05 !important;
+}
+
+/* Same center compaction with the full hybrid-renderer selector. Older rules
+   include data-renderer/data-center-canvas, so this needs equal or higher
+   specificity to win. */
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned {
+  padding: 6px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  grid-template-columns: 112px minmax(142px, 1fr) 112px !important;
+  grid-template-rows: 60px minmax(92px, 1fr) 60px !important;
+  gap: 2px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 29px 20px 18px !important;
+  justify-items: center !important;
+  align-items: center !important;
+  padding: 0 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main {
+  min-height: 29px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 29px !important;
+  height: 29px !important;
+  line-height: 29px !important;
+  font-size: 20px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  max-width: 106px !important;
+  font-size: 14px !important;
+  line-height: 16px !important;
+  font-weight: 900 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core {
+  grid-template-rows: 24px minmax(62px, 1fr) !important;
+  align-items: stretch !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-room-count {
+  height: 24px !important;
+  font-size: 15px !important;
+  line-height: 22px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-room-count strong {
+  font-size: 26px !important;
+  line-height: 24px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core-row {
+  grid-template-columns: minmax(62px, 1fr) minmax(66px, 1fr) !important;
+  gap: 2px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-de-tile .tile.small,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-bao-mark {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 62px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining {
+  grid-template-rows: 14px 34px 10px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining > span {
+  font-size: 13px !important;
+  line-height: 14px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-wall-remaining > strong {
+  font-size: 34px !important;
+  line-height: 34px !important;
+}
+
+/* Wood frame + frosted green felt, kept flat/orthographic.  The canvas draws
+   the same style for the 1500x780 content layer; these CSS layers cover any
+   width-first extra bands without moving or stretching table elements. */
+body.battle-app-mode.battle-desktop-table,
+body.battle-app-mode.battle-mobile-table,
+body.battle-app-mode.battle-desktop-table .app-shell,
+body.battle-app-mode.battle-mobile-table .app-shell,
+body.battle-app-mode.battle-desktop-table #gameView,
+body.battle-app-mode.battle-mobile-table #gameView,
+body.battle-app-mode.battle-desktop-table .game-layout,
+body.battle-app-mode.battle-mobile-table .game-layout,
+body.battle-app-mode.battle-desktop-table .game-battle-layout,
+body.battle-app-mode.battle-mobile-table .game-battle-layout,
+body.battle-app-mode.battle-desktop-table .table-zone,
+body.battle-app-mode.battle-mobile-table .table-zone {
+  background-color: #053827 !important;
+  background-image:
+    radial-gradient(circle at 50% 38%, rgba(24, 128, 91, 0.32), rgba(5, 56, 39, 0.78) 56%, #032b20 100%),
+    repeating-linear-gradient(0deg, rgba(231, 255, 222, 0.045) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(90deg, rgba(0, 26, 16, 0.085) 0 1px, transparent 1px 31px) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"],
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"],
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"] {
+  background-color: #4d2b17 !important;
+  background-image:
+    radial-gradient(ellipse at 18% 12%, rgba(31, 12, 5, 0.34), transparent 10%),
+    radial-gradient(ellipse at 78% 86%, rgba(31, 12, 5, 0.32), transparent 12%),
+    repeating-linear-gradient(0deg, rgba(255, 214, 137, 0.16) 0 1px, transparent 1px 13px),
+    repeating-linear-gradient(90deg, rgba(44, 18, 7, 0.26) 0 2px, transparent 2px 42px),
+    linear-gradient(180deg, #7b4b28 0%, #5e341c 54%, #2f170d 100%) !important;
+  box-shadow:
+    inset 0 0 0 6px rgba(37, 15, 6, 0.74),
+    inset 0 0 0 11px rgba(224, 171, 78, 0.28),
+    inset 0 0 28px rgba(0, 0, 0, 0.42) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  z-index: 1 !important;
+  inset: 22px 24px !important;
+  border: 5px solid rgba(33, 14, 7, 0.58) !important;
+  border-radius: 22px !important;
+  background-color: #0b6b43 !important;
+  background-image:
+    radial-gradient(circle at 52% 42%, rgba(34, 153, 111, 0.42), rgba(10, 100, 70, 0.68) 56%, rgba(6, 59, 43, 0.98) 100%),
+    repeating-linear-gradient(0deg, rgba(235, 255, 229, 0.085) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(90deg, rgba(0, 25, 16, 0.16) 0 1px, transparent 1px 31px),
+    radial-gradient(circle at 24% 66%, rgba(230, 255, 221, 0.075), transparent 22%) !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(234, 205, 116, 0.34),
+    inset 0 0 46px rgba(0, 20, 13, 0.36),
+    0 3px 12px rgba(0, 0, 0, 0.34) !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  z-index: 3 !important;
+  inset: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 220, 128, 0.22),
+    inset 0 0 0 18px rgba(42, 18, 8, 0.32) !important;
+  pointer-events: none !important;
+}
+
+/* Center HUD final pass: the wind highlight belongs to the current discard
+   player, not to the dealer. Keep every visual strictly clipped to the center
+   model box. */
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned {
+  padding: 7px !important;
+  border: 2px solid rgba(230, 190, 92, 0.88) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(16, 76, 60, 0.96), rgba(3, 38, 31, 0.98) 62%, rgba(2, 25, 22, 0.99) 100%) !important;
+  box-shadow:
+    0 8px 18px rgba(0, 10, 8, 0.38),
+    inset 0 0 0 1px rgba(255, 246, 188, 0.18),
+    inset 0 0 26px rgba(0, 0, 0, 0.18) !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned *,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned * {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-hud-grid,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: 104px minmax(150px, 1fr) 104px !important;
+  grid-template-rows: 55px minmax(94px, 1fr) 55px !important;
+  grid-template-areas:
+    ". top ."
+    "left core right"
+    ". bottom ." !important;
+  gap: 3px !important;
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  position: relative !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-rows: 27px 15px 13px !important;
+  align-content: center !important;
+  justify-items: center !important;
+  align-items: center !important;
+  gap: 0 !important;
+  padding: 0 5px !important;
+  border: 1px solid rgba(143, 210, 188, 0.18) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 246, 198, 0.055), rgba(0, 0, 0, 0.045)),
+    rgba(5, 30, 28, 0.42) !important;
+  color: rgba(255, 238, 181, 0.9) !important;
+  line-height: 1 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.78) !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-left,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-right,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right {
+  grid-template-rows: 31px 18px 16px !important;
+  align-content: center !important;
+  padding-inline: 4px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card.active,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card.active {
+  border-color: rgba(255, 218, 92, 0.86) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 219, 94, 0.16), rgba(25, 119, 89, 0.34)),
+    rgba(7, 59, 47, 0.82) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 184, 0.22),
+    0 0 12px rgba(255, 218, 92, 0.28) !important;
+  color: #fff6cf !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after {
+  content: "庄" !important;
+  position: absolute !important;
+  top: 3px !important;
+  right: 4px !important;
+  width: 16px !important;
+  height: 14px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 5px !important;
+  background: rgba(210, 152, 41, 0.82) !important;
+  color: #2a1706 !important;
+  font-size: 10px !important;
+  font-weight: 1000 !important;
+  line-height: 1 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 238, 171, 0.32) !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  min-width: 0 !important;
+  min-height: 27px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card.dealer .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card.dealer .center-seat-wind {
+  width: 26px !important;
+  min-width: 26px !important;
+  height: 26px !important;
+  line-height: 26px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 232, 140, 0.18) !important;
+  background: rgba(255, 246, 198, 0.12) !important;
+  color: #f4dea2 !important;
+  font-size: 18px !important;
+  font-weight: 1000 !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card.active .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card.active .center-seat-wind {
+  border-color: rgba(255, 244, 174, 0.74) !important;
+  background: linear-gradient(180deg, #ffe695, #d59c2b) !important;
+  color: #241607 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 232, 0.56),
+    0 0 12px rgba(255, 218, 92, 0.58) !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-warning,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-bao,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-warning,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-bao {
+  width: 15px !important;
+  min-width: 15px !important;
+  height: 15px !important;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  line-height: 15px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  display: block !important;
+  width: 100% !important;
+  max-width: 96px !important;
+  overflow: hidden !important;
+  text-align: center !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  color: rgba(255, 242, 194, 0.96) !important;
+  font-size: 13px !important;
+  line-height: 15px !important;
+  font-weight: 900 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  color: rgba(118, 236, 176, 0.94) !important;
+  font-size: 12px !important;
+  line-height: 13px !important;
+  font-weight: 1000 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core {
+  grid-area: core !important;
+  display: grid !important;
+  grid-template-rows: 25px minmax(62px, 1fr) !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 3px !important;
+  border: 1px solid rgba(230, 190, 92, 0.22) !important;
+  border-radius: 14px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 239, 170, 0.07), rgba(0, 0, 0, 0.05)),
+    rgba(1, 24, 22, 0.38) !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-room-count,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count {
+  height: 25px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 229, 141, 0.08) !important;
+  color: rgba(255, 228, 161, 0.98) !important;
+  font-size: 14px !important;
+  line-height: 25px !important;
+  font-weight: 1000 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-room-count strong,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-room-count strong {
+  color: #78f1c4 !important;
+  font-size: 25px !important;
+  line-height: 25px !important;
+  font-weight: 1000 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core-row,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core-row {
+  display: grid !important;
+  grid-template-columns: minmax(58px, 1fr) minmax(66px, 1.05fr) !important;
+  align-items: center !important;
+  justify-items: center !important;
+  gap: 4px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-indicator-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-indicator-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-wall-remaining,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-wall-remaining {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 11px !important;
+  background: rgba(0, 12, 11, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(230, 190, 92, 0.16) !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-de-tile .tile.small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-core .center-bao-mark,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-de-tile .tile.small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core .center-bao-mark {
+  width: 39px !important;
+  min-width: 39px !important;
+  height: 55px !important;
+  font-size: 25px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-wall-remaining,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-wall-remaining {
+  display: grid !important;
+  grid-template-rows: 14px 33px 10px !important;
+  align-items: center !important;
+  justify-items: center !important;
+  color: #ffe4a1 !important;
+  line-height: 1 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-wall-remaining > span,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-wall-remaining > span {
+  font-size: 12px !important;
+  line-height: 14px !important;
+  font-weight: 900 !important;
+  opacity: 0.9 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-wall-remaining > strong,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-wall-remaining > strong {
+  color: #78f1c4 !important;
+  font-size: 32px !important;
+  line-height: 33px !important;
+  font-weight: 1000 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-wall-remaining > small,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-wall-remaining > small {
+  color: rgba(255, 234, 177, 0.82) !important;
+  font-size: 10px !important;
+  line-height: 10px !important;
+}
+
+/* Background rebuild: one source of truth.
+   The previous pass mixed a canvas table with CSS ::before/::after table
+   panels. On real mobile browsers the rotated shell and width-first table
+   scaling can place those layers in different coordinate systems, causing the
+   split/right-panel background shown in phone screenshots. From here onward
+   v7 canvas owns the full tabletop; CSS only provides a passive wood-colored
+   fallback behind the canvas. */
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"],
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"],
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"] {
+  background-color: #4f2d18 !important;
+  background-image:
+    linear-gradient(180deg, #6d4527 0%, #4a2815 58%, #281207 100%) !important;
+  box-shadow:
+    inset 0 0 0 5px rgba(33, 13, 5, 0.72),
+    inset 0 0 0 10px rgba(226, 174, 82, 0.20),
+    inset 0 0 30px rgba(0, 0, 0, 0.38) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::before,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"]::after {
+  content: none !important;
+  display: none !important;
+  position: absolute !important;
+  inset: auto !important;
+  border: 0 !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode.battle-desktop-table,
+body.battle-app-mode.battle-mobile-table,
+body.battle-app-mode.battle-desktop-table .app-shell,
+body.battle-app-mode.battle-mobile-table .app-shell,
+body.battle-app-mode.battle-desktop-table #gameView,
+body.battle-app-mode.battle-mobile-table #gameView,
+body.battle-app-mode.battle-desktop-table .game-layout,
+body.battle-app-mode.battle-mobile-table .game-layout,
+body.battle-app-mode.battle-desktop-table .game-battle-layout,
+body.battle-app-mode.battle-mobile-table .game-battle-layout,
+body.battle-app-mode.battle-desktop-table .table-zone,
+body.battle-app-mode.battle-mobile-table .table-zone {
+  background-color: #041b15 !important;
+  background-image: none !important;
+}
+
+/* The background canvas must cover the full scaled table, not only the
+   1500x780 content layer.  Gameplay DOM layers continue to use the centered
+   content layer above; only the tabletop background stretches. */
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"] > #tableCanvas,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-renderer="canvas"][data-geometry="v7"] > #tableCanvas {
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Live discard emphasis: only the discard currently waiting for response gets
+   enlarged. The class is removed once the response resolves or a newer discard
+   enters the response window. */
+body.battle-app-mode .mahjong-table[data-renderer="dom"][data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-live-latest,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-geometry="v7"] .table-world-layer .discard-zone.dom-v7-positioned .tile.small.discard-live-latest {
+  position: relative !important;
+  z-index: 20 !important;
+  transform: scale(1.28) !important;
+  transform-origin: center center !important;
+  outline: 3px solid rgba(255, 215, 76, 0.98) !important;
+  outline-offset: 2px !important;
+  border-radius: 5px !important;
+  box-shadow:
+    0 0 0 2px rgba(72, 32, 0, 0.62),
+    0 0 18px rgba(255, 213, 73, 0.86),
+    0 8px 14px rgba(0, 0, 0, 0.36) !important;
+  filter: brightness(1.08) saturate(1.08) !important;
+}
+
+/* Center seat info final layout: row 1 = wind + chips + warning/bao,
+   row 2 = name. This replaces the old wind/name/chips three-line layout. */
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 30px 18px !important;
+  align-content: center !important;
+  gap: 1px !important;
+  padding: 3px 5px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-left,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-right,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right {
+  grid-template-rows: 32px 19px !important;
+  padding-inline: 4px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 25px !important;
+  min-width: 25px !important;
+  height: 25px !important;
+  line-height: 25px !important;
+  font-size: 17px !important;
+  border-radius: 8px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 68px !important;
+  display: block !important;
+  overflow: hidden !important;
+  text-align: left !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: rgba(125, 242, 184, 0.96) !important;
+  font-size: 13px !important;
+  line-height: 16px !important;
+  font-weight: 1000 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-chip {
+  max-width: 56px !important;
+  font-size: 12px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  width: 100% !important;
+  max-width: 94px !important;
+  text-align: center !important;
+  color: rgba(255, 239, 190, 0.96) !important;
+  font-size: 12px !important;
+  line-height: 14px !important;
+  font-weight: 900 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after {
+  content: "庄" !important;
+  top: 2px !important;
+  right: 3px !important;
+}
+
+/* Center HUD final typography tweak: no dealer text marker; make name/chips
+   larger while preserving the wind/chip same-row layout inside each card. */
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card[data-dealer="1"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 31px 19px !important;
+  padding: 3px 6px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  gap: 3px !important;
+  min-height: 29px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-wind,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  width: 25px !important;
+  min-width: 25px !important;
+  height: 25px !important;
+  line-height: 25px !important;
+  font-size: 17px !important;
+  flex: 0 0 25px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: 76px !important;
+  font-size: 15px !important;
+  line-height: 17px !important;
+  text-align: left !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-chip,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-chip {
+  max-width: 62px !important;
+  font-size: 14px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  max-width: 106px !important;
+  font-size: 14px !important;
+  line-height: 16px !important;
+  font-weight: 950 !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right .center-seat-name {
+  max-width: 92px !important;
+  font-size: 13px !important;
+}
+
+/* Center HUD layout authority. Keep seat cards in their named grid areas so
+   later center typography tweaks cannot fall back to grid auto-placement. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-hud-grid {
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: 104px minmax(150px, 1fr) 104px !important;
+  grid-template-rows: 55px minmax(94px, 1fr) 55px !important;
+  grid-template-areas:
+    ". top ."
+    "left core right"
+    ". bottom ." !important;
+  gap: 3px !important;
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-top {
+  grid-area: top !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-left {
+  grid-area: left !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-right {
+  grid-area: right !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card-bottom {
+  grid-area: bottom !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-core {
+  grid-area: core !important;
+  display: grid !important;
+  grid-template-rows: 25px minmax(62px, 1fr) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Center seat status badges. Wind, chips and badges share one flex row:
+   wind and badges keep fixed square metrics; chips are the only stretch item. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-template-rows: 28px 18px !important;
+  align-content: center !important;
+  justify-items: stretch !important;
+  align-items: center !important;
+  gap: 0 !important;
+  padding: 3px 5px !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 26px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-wind {
+  flex: 0 0 25px !important;
+  width: 25px !important;
+  min-width: 25px !important;
+  max-width: 25px !important;
+  height: 25px !important;
+  min-height: 25px !important;
+  max-height: 25px !important;
+  line-height: 25px !important;
+  font-size: 17px !important;
+  transform: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-chip {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  height: 20px !important;
+  line-height: 20px !important;
+  font-size: 15px !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-status {
+  flex: 0 0 34px !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 9px !important;
+  font-size: 14px !important;
+  line-height: 24px !important;
+  font-weight: 1000 !important;
+  letter-spacing: 0 !important;
+  transform: none !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.62) !important;
+  animation: centerSeatStatusPulse 0.9s ease-in-out infinite alternate !important;
+  z-index: 3 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-warning {
+  border: 2px solid rgba(255, 248, 164, 0.98) !important;
+  background: linear-gradient(180deg, #ff4c3f, #b41116) !important;
+  color: #fff8cf !important;
+  box-shadow:
+    0 0 0 2px rgba(77, 0, 0, 0.72),
+    0 0 14px rgba(255, 70, 48, 0.95) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-bao {
+  border: 2px solid rgba(255, 246, 164, 0.98) !important;
+  background: linear-gradient(180deg, #ffd94d, #d17a00) !important;
+  color: #231000 !important;
+  box-shadow:
+    0 0 0 2px rgba(72, 31, 0, 0.66),
+    0 0 14px rgba(255, 193, 49, 0.95) !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 18px !important;
+  font-size: 13px !important;
+  line-height: 17px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+@keyframes centerSeatStatusPulse {
+  from {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  to {
+    filter: brightness(1.24) saturate(1.2);
+    transform: scale(1.08);
+  }
+}
+
+/* Room menu placement authority. The menu layer spans the already transformed
+   table container. Do not add --battle-content-offset-y here: the table itself
+   has already been placed/scaled, so applying that offset again pushes the
+   button and panel into the right-middle of the screen. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 170 !important;
+  display: block !important;
+  transform: none !important;
+  pointer-events: none !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu-button {
+  position: absolute !important;
+  top: 18px !important;
+  right: 18px !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  position: absolute !important;
+  top: 96px !important;
+  right: 18px !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: min(420px, calc(100% - 36px)) !important;
+  min-width: 0 !important;
+  max-width: calc(100% - 36px) !important;
+  max-height: calc(100% - 128px) !important;
+  margin: 0 !important;
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+  pointer-events: auto !important;
+  z-index: 1 !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-button {
+  top: 18px !important;
+  right: 18px !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  top: 100px !important;
+  right: 18px !important;
+  width: min(680px, calc(100% - 36px)) !important;
+  max-width: calc(100% - 36px) !important;
+  max-height: calc(var(--battle-content-h, 780px) - 132px) !important;
+}
+
+/* Final v7 override: previous desktop/mobile compatibility rules and DOM-tile
+   center typography rules have higher selector specificity. Keep these last. */
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .room-menu,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .room-menu-button,
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-button {
+  top: 18px !important;
+  right: 18px !important;
+  bottom: auto !important;
+  left: auto !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  top: 96px !important;
+  right: 18px !important;
+  bottom: auto !important;
+  left: auto !important;
+  max-height: calc(100% - 128px) !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  top: 100px !important;
+  right: 18px !important;
+  bottom: auto !important;
+  left: auto !important;
+  max-height: calc(100% - 132px) !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 28px 18px !important;
+  align-content: center !important;
+  gap: 0 !important;
+  padding: 3px 5px !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  min-height: 26px !important;
+  overflow: visible !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  height: 18px !important;
+  font-size: 13px !important;
+  line-height: 17px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Final room/center correction. Keep player names fully visible and keep the
+   room popup visually attached to the upper-right room button. */
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-card,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-card {
+  grid-template-rows: 25px 22px !important;
+  gap: 0 !important;
+  padding: 2px 5px 4px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-main,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-main {
+  min-height: 25px !important;
+  height: 25px !important;
+}
+
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="canvas"][data-geometry="v7"][data-center-canvas="0"] .table-center-info.dom-v7-positioned .center-seat-name,
+body.battle-app-mode .mahjong-table.dom-v7-tiles[data-renderer="dom"][data-geometry="v7"] .table-center-info.dom-v7-positioned .center-seat-name {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  font-size: 14px !important;
+  line-height: 22px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .table-center-info.dom-v7-positioned .center-de-label {
+  display: none !important;
+}
+
+body.battle-app-mode.battle-desktop-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  top: 50% !important;
+  right: auto !important;
+  left: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(820px, calc(100vw - 80px)) !important;
+  max-width: calc(100vw - 80px) !important;
+  max-height: min(640px, calc(100vh - 96px)) !important;
+  height: auto !important;
+}
+
+body.battle-app-mode.battle-mobile-table .mahjong-table[data-geometry="v7"] .room-menu-panel {
+  top: 50% !important;
+  right: auto !important;
+  left: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(900px, calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px) !important;
+  max-height: min(700px, calc(100vh - 96px)) !important;
+  height: auto !important;
+}
+
+/* Centered room panel proportions: actions on the left, diagnostics on the
+   right. This prevents the popup from becoming a narrow clipped vertical menu. */
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu-panel[hidden] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu-panel:not([hidden]) {
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(320px, 1.25fr) !important;
+  grid-auto-rows: min-content !important;
+  align-items: stretch !important;
+  gap: 14px 20px !important;
+  padding: 24px !important;
+  overflow: hidden !important;
+  overscroll-behavior: contain !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] .room-menu-panel > button {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 58px !important;
+  height: auto !important;
+  padding: 12px 18px !important;
+  font-size: 22px !important;
+  line-height: 1.15 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #playerStatsBtn,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #bugReportBtn,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #bugReportStatus,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #resetMatchBtn,
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #exitRoomBtn {
+  grid-column: 1 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #bugReportStatus {
+  min-height: 22px !important;
+  height: auto !important;
+  font-size: 15px !important;
+  line-height: 1.3 !important;
+  overflow: hidden !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #roomDiagnostics {
+  grid-column: 2 !important;
+  grid-row: 1 / span 5 !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: auto !important;
+  padding: 16px !important;
+  font-size: 16px !important;
+  line-height: 1.35 !important;
+}
+
+body.battle-app-mode .mahjong-table[data-geometry="v7"] #roomDiagnostics .room-diagnostics-grid {
+  gap: 8px !important;
+}

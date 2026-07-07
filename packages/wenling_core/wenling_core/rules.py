@@ -14,6 +14,8 @@ from .tiles import (
     TILE_BY_CODE,
     TILE_ORDER,
     WIND_BY_SEAT,
+    WINDS,
+    flower_set_for_de,
     flower_number,
     is_dragon,
     is_flower_code,
@@ -27,6 +29,7 @@ from .tiles import (
 
 
 Group = dict[str, Any]
+FOUR_WINDS_GROUP_MELD_TYPES = {"peng", "an_gang"}
 
 
 def remove_de_tiles(hand: Counter[str], de_set: set[str]) -> tuple[Counter[str], int]:
@@ -75,7 +78,7 @@ def win_plans(hand: Counter[str], de_set: set[str], melds: list[Group] | None = 
 
     The function is tile-count generic: 14-tile and 17-tile hands both work as long as
     the concealed tile count is 3n+2 after exposed melds have been removed.
-    "得" is treated as a wildcard for pair, sequence and triplet only. Exposed kongs
+    "寰? is treated as a wildcard for pair, sequence and triplet only. Exposed kongs
     are supplied through melds and never use wildcards.
     """
     melds = melds or []
@@ -96,7 +99,7 @@ def win_plans(hand: Counter[str], de_set: set[str], melds: list[Group] | None = 
         tile = TILE_BY_CODE[first]
         plans: list[tuple[Group, ...]] = []
 
-        # Triplet using real tiles plus optional "得".
+        # Triplet using real tiles plus optional "寰?.
         take = min(3, local[first])
         need = 3 - take
         if need <= wild_count:
@@ -107,7 +110,7 @@ def win_plans(hand: Counter[str], de_set: set[str], melds: list[Group] | None = 
             for rest in search_groups(_counter_key(after), wild_count - need):
                 plans.append(({"type": "triplet", "tile": first, "wilds": need},) + rest)
 
-        # Sequence in 万/条/筒. The first remaining real tile may be left, middle, or right.
+        # Sequence in 涓?鏉?绛? The first remaining real tile may be left, middle, or right.
         if tile.suit in SUITS and tile.rank is not None:
             for start in (tile.rank - 2, tile.rank - 1, tile.rank):
                 if start < 1 or start > 7:
@@ -226,44 +229,61 @@ def leizi_win_reason(hand: Counter[str], flowers: list[str], de_indicator: str, 
     if has_all_flower_numbers(flowers):
         return "劣子和：红/黑花凑齐 1、2、3、4"
 
-    has_four = lambda code: hand.get(code, 0) >= 4 and code not in de_set
+    self_wind = WIND_BY_SEAT[seat]
+    round_flower_set = flower_set_for_de(de_indicator)
+
+    def is_round_flower(code: str) -> bool:
+        return code in round_flower_set
+
+    def has_four_flowered(code: str) -> bool:
+        return is_round_flower(code) and sum(1 for flower in flowers if flower == code) >= 4
+
+    def has_four_concealed(code: str) -> bool:
+        return code not in de_set and not is_round_flower(code) and hand.get(code, 0) >= 4
+
+    def has_four_leizi(code: str) -> bool:
+        if code in de_set:
+            return False
+        if is_round_flower(code):
+            return has_four_flowered(code)
+        return has_four_concealed(code)
     is_num = TILE_BY_CODE[de_indicator].suit in SUITS
     is_wind_de = is_wind(de_indicator)
 
     if is_num:
-        if has_four("bai"):
+        if has_four_leizi("bai"):
             return "劣子和：4 张白板"
         for code in (WIND_BY_SEAT[seat], "fa", "zhong"):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：暗杠{TILE_BY_CODE[code].name}"
     elif is_wind_de:
         for code in ("bai", "zhong", "fa"):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张{TILE_BY_CODE[code].name}"
         for code in ("east", "south", "west", "north"):
-            if code != de_indicator and has_four(code):
+            if code != de_indicator and has_four_leizi(code):
                 return f"劣子和：暗杠非得门风{TILE_BY_CODE[code].name}"
     elif de_indicator == "zhong":
         for code in ("bai", "fa", WIND_BY_SEAT[seat]):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张/暗杠{TILE_BY_CODE[code].name}"
     elif de_indicator == "bai":
         for code in ("zhong", "fa", WIND_BY_SEAT[seat]):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张/暗杠{TILE_BY_CODE[code].name}"
     elif de_indicator == "fa":
         for code in ("bai", "zhong", WIND_BY_SEAT[seat]):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张/暗杠{TILE_BY_CODE[code].name}"
     elif de_indicator in RED_FLOWERS:
         for code in ("bai", "fa", "zhong", WIND_BY_SEAT[seat]):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张/暗杠{TILE_BY_CODE[code].name}"
         if sum(1 for code in flowers if code in BLACK_FLOWERS) >= 4:
             return "劣子和：4 张黑花"
     elif de_indicator in BLACK_FLOWERS:
         for code in ("bai", "fa", "zhong", WIND_BY_SEAT[seat]):
-            if has_four(code):
+            if has_four_leizi(code):
                 return f"劣子和：4 张/暗杠{TILE_BY_CODE[code].name}"
         if sum(1 for code in flowers if code in RED_FLOWERS) >= 4:
             return "劣子和：4 张红花"
@@ -386,10 +406,10 @@ def _current_concealed_score_items(
         if code in used_triplets or code not in (WIND_BY_SEAT[seat], *DRAGONS):
             continue
         if count >= 2:
-            base_items.append({"label": f"字/门风对子 {_tile_name(code)}", "points": 2})
+            base_items.append({"label": f"字牌/门风对子 {_tile_name(code)}", "points": 2})
         elif count == 1 and remaining_wilds >= 1:
             remaining_wilds -= 1
-            base_items.append({"label": f"含得字/门风对子 {_tile_name(code)}", "points": 2})
+            base_items.append({"label": f"含得字牌/门风对子 {_tile_name(code)}", "points": 2})
 
     return base_items, fan_items
 
@@ -440,6 +460,90 @@ def _is_pang_hu(plan: dict[str, Any] | None, melds: list[Group], seat: int, de_i
     return all(group.get("type") == "sequence" for group in plan.get("groups", []))
 
 
+def _is_counted_wind_tile(tile: str | None, de_set: set[str]) -> bool:
+    return bool(tile) and tile in WINDS and tile not in de_set
+
+
+def _concealed_wind_status_options(hand: Counter[str], de_set: set[str], exposed_triplets: set[str]) -> dict[str, list[tuple[str, int]]]:
+    counts, wilds = remove_de_tiles(hand, de_set)
+    options: dict[str, list[tuple[str, int]]] = {}
+    for wind in WINDS:
+        if wind in de_set:
+            options[wind] = [("none", 0)]
+            continue
+        if wind in exposed_triplets:
+            options[wind] = [("triplet", 0)]
+            continue
+
+        count = counts.get(wind, 0)
+        wind_options: list[tuple[str, int]] = [("none", 0)]
+        pair_need = max(0, 2 - count)
+        if pair_need <= wilds:
+            wind_options.append(("pair", pair_need))
+        triplet_need = max(0, 3 - count)
+        if triplet_need <= wilds:
+            wind_options.append(("triplet", triplet_need))
+        options[wind] = wind_options
+    return options
+
+
+def _has_four_winds_huiqi(
+    hand: Counter[str],
+    melds: list[Group],
+    seat: int,
+    de_set: set[str],
+    plan: dict[str, Any] | None = None,
+) -> bool:
+    seat_wind = WIND_BY_SEAT[seat]
+    triplet_winds: set[str] = set()
+    pair_winds: set[str] = set()
+
+    for meld in melds:
+        tile = meld.get("tile")
+        if meld.get("type") in FOUR_WINDS_GROUP_MELD_TYPES and _is_counted_wind_tile(tile, de_set):
+            triplet_winds.add(tile)
+
+    if plan is not None:
+        pair_tile = plan.get("pair", {}).get("tile")
+        if _is_counted_wind_tile(pair_tile, de_set):
+            pair_winds.add(pair_tile)
+        for group in plan.get("groups", []):
+            tile = group.get("tile")
+            if group.get("type") in {"triplet", "wild_triplet"} and _is_counted_wind_tile(tile, de_set):
+                triplet_winds.add(tile)
+        return (
+            seat_wind in triplet_winds
+            and len(triplet_winds) >= 3
+            and set(WINDS).issubset(triplet_winds | pair_winds)
+        )
+
+    options = _concealed_wind_status_options(hand, de_set, triplet_winds)
+
+    def search(index: int, remaining_wilds: int, current_triplets: set[str], current_pairs: set[str]) -> bool:
+        if index >= len(WINDS):
+            return (
+                seat_wind in current_triplets
+                and len(current_triplets) >= 3
+                and set(WINDS).issubset(current_triplets | current_pairs)
+            )
+        wind = WINDS[index]
+        for status, cost in options[wind]:
+            if cost > remaining_wilds:
+                continue
+            next_triplets = set(current_triplets)
+            next_pairs = set(current_pairs)
+            if status == "triplet":
+                next_triplets.add(wind)
+            elif status == "pair":
+                next_pairs.add(wind)
+            if search(index + 1, remaining_wilds - cost, next_triplets, next_pairs):
+                return True
+        return False
+
+    _counts, wilds = remove_de_tiles(hand, de_set)
+    return search(0, wilds, set(triplet_winds), set(pair_winds))
+
+
 def _wait_base_items(
     plan: dict[str, Any] | None,
     win_tile: str | None,
@@ -460,10 +564,10 @@ def _wait_base_items(
             continue
         ranks = [TILE_BY_CODE[code].rank for code in group.get("tiles", [])]
         if tile.rank == ranks[1]:
-            items.append({"label": "嵌档", "points": 2})
+            items.append({"label": "嵌张", "points": 2})
             break
         if (ranks[0] == 1 and tile.rank == 3) or (ranks[0] == 7 and tile.rank == 7):
-            items.append({"label": "靠柄", "points": 2})
+            items.append({"label": "边张", "points": 2})
             break
     return items
 
@@ -522,9 +626,11 @@ def _choose_scoring_plan(
             fan += 2
         if winner and _is_pang_hu(plan, melds, seat, de_indicator):
             fan += 1
-        if {"east", "south", "west", "north"}.issubset(set(non_de_non_flower)):
+        if _has_four_winds_huiqi(hand, melds, seat, de_set, plan):
             fan += 13
         if winner:
+            if win_type == "天胡":
+                fan += 5
             if win_type in ("杠上开花", "抢杠和", "自摸得"):
                 fan += 1
             de_count = sum(hand.get(code, 0) for code in de_set)
@@ -593,7 +699,8 @@ def score_player(
     if plan:
         pair_points = _group_base_points(plan["pair"], seat, concealed=True, de_indicator=de_indicator)
         base += pair_points
-        group_desc.append(f"将:{plan['pair'].get('tile', '得')}")
+        pair_tile = plan["pair"].get("tile", "de")
+        group_desc.append(f"将:{pair_tile}")
         if pair_points:
             base_items.append({"label": _group_type_name(plan["pair"]), "points": pair_points})
         for group in plan["groups"]:
@@ -627,11 +734,11 @@ def score_player(
     for code in flowers:
         if code in DRAGONS and code not in de_set:
             fan += 1
-            fan_items.append({"label": f"字牌花 {_tile_name(code)}", "fan": 1})
+            fan_items.append({"label": f"字牌花{_tile_name(code)}", "fan": 1})
     for code in flowers:
         if code in (f"rh{seat + 1}", f"bh{seat + 1}"):
             fan += 1
-            fan_items.append({"label": f"门风花 {_tile_name(code)}", "fan": 1})
+            fan_items.append({"label": f"门风花{_tile_name(code)}", "fan": 1})
     for meld in melds:
         tile = meld.get("tile")
         if _is_scoring_honor(tile, seat, de_set):
@@ -666,11 +773,14 @@ def score_player(
             fan += 1
             fan_items.append({"label": "旁胡", "fan": 1})
 
-    if {"east", "south", "west", "north"}.issubset(set(non_de_non_flower)):
+    if _has_four_winds_huiqi(hand, melds, seat, de_set, plan):
         fan += 13
         fan_items.append({"label": "四风会齐", "fan": 13})
 
     if winner:
+        if win_type == "天胡":
+            fan += 5
+            fan_items.append({"label": "天胡", "fan": 5})
         if win_type in ("杠上开花", "抢杠和", "自摸得"):
             fan += 1
             fan_items.append({"label": win_type, "fan": 1})

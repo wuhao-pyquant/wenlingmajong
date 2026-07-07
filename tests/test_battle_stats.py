@@ -23,6 +23,8 @@ class BattleStatsTests(unittest.TestCase):
             db.record_opening("alice", opening_shanten=4, de_draws=3, fan_flower_draws=2)
             db.record_win("alice", "普通和牌", win_turn=3, win_points=160)
             db.record_win("alice", "劣子和", win_turn=5, win_points=300)
+            db.record_hand_luck("alice", 20.0)
+            db.record_hand_luck("alice", 80.0)
 
             stats = db.stats_for_accounts(["alice"])[0]
             for period in ("all", "today"):
@@ -36,6 +38,8 @@ class BattleStatsTests(unittest.TestCase):
                 self.assertEqual(row["leizi_win_rate"], 0.5)
                 self.assertEqual(row["avg_win_turn"], 4.0)
                 self.assertEqual(row["avg_win_points"], 230.0)
+                self.assertEqual(row["luck_score"], 50.0)
+                self.assertEqual(row["luck_hands"], 2)
 
     def test_database_migrates_existing_stats_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -71,6 +75,61 @@ class BattleStatsTests(unittest.TestCase):
             self.assertEqual(row["avg_win_turn"], 2.0)
             self.assertEqual(row["avg_win_points"], 120.0)
 
+    def test_account_enable_clear_delete_and_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db = BattleDatabase(root / "battle.sqlite3")
+            db.ensure_account("alice")
+            db.record_opening("alice", opening_shanten=2, de_draws=1, fan_flower_draws=0)
+
+            db.set_account_enabled("alice", False)
+            self.assertNotIn("alice", db.active_human_accounts())
+            with self.assertRaisesRegex(ValueError, "停用"):
+                db.require_active_human_account("alice")
+
+            db.set_account_enabled("alice", True)
+            backup = db.create_backup(root / "backups")
+            self.assertTrue(backup.is_file())
+            db.clear_account_stats("alice")
+            self.assertEqual(db.stats_for_accounts(["alice"])[0]["all"]["rounds"], 0)
+            db.delete_account("alice")
+            with self.assertRaisesRegex(ValueError, "不存在"):
+                db.account("alice")
+
+    def test_merge_accounts_sums_every_period_and_deletes_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = BattleDatabase(Path(temp_dir) / "battle.sqlite3")
+            for account, shanten in (("alice", 1), ("alice-old", 3), ("alice-phone", 5)):
+                db.ensure_account(account)
+                db.record_opening(account, opening_shanten=shanten, de_draws=1, fan_flower_draws=0)
+                db.record_win(account, "普通和牌", win_turn=2, win_points=100)
+                db.record_hand_luck(account, 20.0 if account == "alice" else 80.0)
+
+            result = db.merge_accounts(["alice-old", "alice-phone"], "alice")
+
+            self.assertEqual(set(result["deleted_sources"]), {"alice-old", "alice-phone"})
+            merged = db.stats_for_accounts(["alice"])[0]
+            for period in ("all", "today"):
+                self.assertEqual(merged[period]["rounds"], 3)
+                self.assertEqual(merged[period]["wins"], 3)
+                self.assertEqual(merged[period]["avg_opening_shanten"], 3.0)
+                self.assertEqual(merged[period]["avg_win_points"], 100.0)
+                self.assertEqual(merged[period]["luck_score"], 60.0)
+                self.assertEqual(merged[period]["luck_hands"], 3)
+            self.assertEqual(db.active_human_accounts(), ["alice"])
+
+    def test_fixed_ai_accounts_cannot_be_mutated(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = BattleDatabase(Path(temp_dir) / "battle.sqlite3")
+            for action in (
+                lambda: db.set_account_enabled("AI1", False),
+                lambda: db.clear_account_stats("AI1"),
+                lambda: db.delete_account("AI1"),
+                lambda: db.merge_accounts(["AI1"], "AI2"),
+            ):
+                with self.assertRaisesRegex(ValueError, "AI"):
+                    action()
+
     def test_game_settlement_records_winner_turn_and_points(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             game = WenlingMahjongGame(
@@ -85,9 +144,10 @@ class BattleStatsTests(unittest.TestCase):
             before = {row["name"]: row for row in game.player_stat_summary()}[game.players[1].name]
             before_wins = int(before["wins"])
 
-            game._finish_win(1, "普通和牌")
+            game._finish_win(1, "普通和牌", discarder=0, win_tile="m1")
 
             settlement = game.settlement or {}
+            self.assertEqual(settlement["discarder"], 0)
             self.assertEqual(settlement["win_turn"], 3)
             self.assertEqual(settlement["win_points"], settlement["scores"][1]["total"])
             rows = {row["name"]: row for row in game.player_stat_summary()}

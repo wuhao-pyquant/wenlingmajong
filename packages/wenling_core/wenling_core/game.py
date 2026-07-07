@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .hand_luck_runtime import HandLuckScorer, default_hand_luck_scorer
 from .model import LinearPolicyModel, action_label
 from .rules import (
     add_kongs,
@@ -160,6 +161,7 @@ class WenlingMahjongGame:
         response_delay_sec: float = 2.0,
         ai_decision_timeout_sec: float = DEFAULT_AI_DECISION_TIMEOUT_SEC,
         stats_recorder: Any | None = None,
+        hand_luck_scorer: HandLuckScorer | None = None,
         ai_result_callback: Any | None = None,
         ai_context_provider: Any | None = None,
     ):
@@ -175,6 +177,7 @@ class WenlingMahjongGame:
         self.response_delay_sec = max(0.0, float(response_delay_sec))
         self.ai_decision_timeout_sec = max(0.1, float(ai_decision_timeout_sec))
         self.stats_recorder = stats_recorder
+        self.hand_luck_scorer = hand_luck_scorer or default_hand_luck_scorer()
         self.ai_result_callback = ai_result_callback
         self.ai_context_provider = ai_context_provider
         self.random = random.Random(seed)
@@ -251,16 +254,27 @@ class WenlingMahjongGame:
             "wins": 0.0,
             "win_turn_total": 0.0,
             "win_point_total": 0.0,
+            "luck_score_total": 0.0,
+            "luck_score_count": 0.0,
         }
 
     @staticmethod
     def _empty_round_stats() -> dict[str, int | None]:
         return {
             "opening_shanten": None,
+            "opening_normal_shanten": None,
+            "opening_leizi_distance": None,
             "de_draws": 0,
             "fan_flower_draws": 0,
             "draw_turns": 0,
+            "normal_draw_count": 0,
+            "open_claim_count": 0,
+            "supplement_draw_count": 0,
         }
+
+    @staticmethod
+    def _luck_model_distance(value: int | None) -> int:
+        return max(0, int(value or 0))
 
     def _stats_key(self, seat: int) -> str:
         name = str(self.players[seat].name or "").strip()
@@ -290,6 +304,15 @@ class WenlingMahjongGame:
             self.round_stats.append(self._empty_round_stats())
         current = self.round_stats[seat]
         current["draw_turns"] = int(current.get("draw_turns") or 0) + 1
+        current["normal_draw_count"] = int(current.get("normal_draw_count") or 0) + 1
+
+    def _record_open_claim(self, seat: int) -> None:
+        if seat < 0 or seat >= len(self.players):
+            return
+        while len(self.round_stats) < len(self.players):
+            self.round_stats.append(self._empty_round_stats())
+        current = self.round_stats[seat]
+        current["open_claim_count"] = int(current.get("open_claim_count") or 0) + 1
 
     def _initialize_opening_turn_counts(self) -> None:
         while len(self.round_stats) < len(self.players):
@@ -307,6 +330,58 @@ class WenlingMahjongGame:
         stats["win_point_total"] += int(win_points)
         return win_turn
 
+    def _record_hand_luck(
+        self,
+        winner: int | None,
+        final_hands: list[Counter[str]] | None = None,
+        win_type: str = "",
+    ) -> list[dict[str, Any]]:
+        while len(self.round_stats) < len(self.players):
+            self.round_stats.append(self._empty_round_stats())
+        results: list[dict[str, Any]] = []
+        recorder = getattr(self, "stats_recorder", None)
+        for seat in range(len(self.players)):
+            current = self.round_stats[seat]
+            final_hand = (
+                Counter(final_hands[seat])
+                if final_hands is not None and 0 <= seat < len(final_hands)
+                else Counter(self.players[seat].hand)
+            )
+            final_normal_shanten = self._luck_model_distance(shanten(final_hand, set()))
+            final_leizi_distance = self._luck_model_distance(shanten(final_hand, self.de_set))
+            result = self.hand_luck_scorer.score(
+                seat=seat,
+                de_draws=min(3, int(current.get("de_draws") or 0)),
+                fan_flower_draws=int(current.get("fan_flower_draws") or 0),
+                opening_shanten=self._luck_model_distance(
+                    current.get("opening_normal_shanten")
+                    if current.get("opening_normal_shanten") is not None
+                    else current.get("opening_shanten")
+                ),
+                final_shanten=final_normal_shanten,
+                normal_draw_count=int(current.get("normal_draw_count") or 0),
+                opening_leizi_distance=self._luck_model_distance(current.get("opening_leizi_distance")),
+                final_leizi_distance=final_leizi_distance,
+                open_claim_count=int(current.get("open_claim_count") or 0),
+                supplement_draw_count=int(current.get("supplement_draw_count") or 0),
+                win_type=self._hand_luck_feature_win_type(win_type, winner, seat),
+            )
+            account = self._stats_key(seat)
+            results.append({**result.as_dict(), "account": account})
+            stats = self._stats_for(seat)
+            stats["luck_score_total"] += float(result.luck_percentile)
+            stats["luck_score_count"] += 1
+            if recorder is not None and hasattr(recorder, "record_hand_luck"):
+                recorder.record_hand_luck(account, result.luck_percentile)
+        return results
+
+    @staticmethod
+    def _hand_luck_feature_win_type(win_type: str, winner: int | None, seat: int) -> str:
+        if winner is None or seat != winner:
+            return ""
+        normalized = str(win_type or "").strip()
+        return normalized if normalized in {"劣子和", "自摸得", "杠上开花", "抢杠胡", "抢杠和", "rob_gang"} else ""
+
     def _give_drawn_tile(self, seat: int, tile: str) -> None:
         if not tile:
             return
@@ -318,7 +393,10 @@ class WenlingMahjongGame:
             self.round_stats.append(self._empty_round_stats())
         for seat, player in enumerate(self.players):
             value = shanten(player.hand, self.de_set)
+            normal_value = shanten(player.hand, set())
             self.round_stats[seat]["opening_shanten"] = value
+            self.round_stats[seat]["opening_normal_shanten"] = self._luck_model_distance(normal_value)
+            self.round_stats[seat]["opening_leizi_distance"] = self._luck_model_distance(value)
             stats = self._stats_for(seat)
             stats["rounds"] += 1
             stats["opening_shanten_total"] += value
@@ -352,7 +430,9 @@ class WenlingMahjongGame:
                     "avg_win_points": round(stats["win_point_total"] / stats["wins"], 3) if stats and stats.get("wins") else None,
                     "wins": int(stats.get("wins", 0)) if stats else 0,
                     "win_rate": round(stats["wins"] / rounds, 4) if stats and rounds else None,
-                    "luck_score": None,
+                    "luck_score": round(stats["luck_score_total"] / stats["luck_score_count"], 1)
+                    if stats and stats.get("luck_score_count")
+                    else None,
                     "total_de_draws": int(stats.get("de_draw_total", 0)) if stats else 0,
                     "total_fan_flower_draws": int(stats.get("fan_flower_draw_total", 0)) if stats else 0,
                 }
@@ -425,6 +505,8 @@ class WenlingMahjongGame:
             seat = (self.dealer + offset) % 4
             if self._finish_leizi_if_present(seat):
                 return self.serialize()
+        if self._finish_tianhu_if_present():
+            return self.serialize()
 
         self._start_turn(self.dealer)
         if not (self.defer_ai_responses and self.human_seats):
@@ -489,6 +571,11 @@ class WenlingMahjongGame:
         tile = self._draw_tail()
         if tile:
             self.supplement_count += 1
+            while len(self.round_stats) < len(self.players):
+                self.round_stats.append(self._empty_round_stats())
+            if 0 <= seat < len(self.round_stats):
+                current = self.round_stats[seat]
+                current["supplement_draw_count"] = int(current.get("supplement_draw_count") or 0) + 1
             self._log(
                 "supplement",
                 f"{self._seat_label(seat)}补牌：{reason}",
@@ -1852,6 +1939,7 @@ class WenlingMahjongGame:
             meld = self._claim_meld("ming_gang", tile, [tile] * 4, discarder)
             player.melds.append(meld)
             self._mark_discard_claimed(discarder, tile, claimer, "ming_gang")
+            self._record_open_claim(claimer)
             self._log("claim", f"{self._seat_label(claimer)}明杠 {tile_name(tile)}", seat=claimer, tile=tile, kind="ming_gang")
             self._kong_supplement(claimer)
             return
@@ -1864,6 +1952,7 @@ class WenlingMahjongGame:
                 player.hand.pop(tile, None)
             player.melds.append(self._claim_meld("peng", tile, [tile] * 3, discarder))
             self._mark_discard_claimed(discarder, tile, claimer, "peng")
+            self._record_open_claim(claimer)
             self._log("claim", f"{self._seat_label(claimer)}碰 {tile_name(tile)}", seat=claimer, tile=tile, kind="peng")
             self._start_turn(claimer)
             return
@@ -1877,6 +1966,7 @@ class WenlingMahjongGame:
             tiles = sorted_tiles([tile] + chi_tiles)
             player.melds.append(self._claim_meld("chi", tile, tiles, discarder))
             self._mark_discard_claimed(discarder, tile, claimer, "chi")
+            self._record_open_claim(claimer)
             self._log("claim", f"{self._seat_label(claimer)}吃 {'、'.join(tile_name(c) for c in tiles)}", seat=claimer, tile=tile, kind="chi", tiles=tiles)
             self._start_turn(claimer)
 
@@ -1917,6 +2007,15 @@ class WenlingMahjongGame:
         if not reason:
             return False
         self._finish_win(seat, "劣子和", reason=reason)
+        return True
+
+    def _finish_tianhu_if_present(self) -> bool:
+        seat = self.dealer
+        if self.phase == "round_over":
+            return False
+        if not can_win(self.players[seat].hand, self.de_set, self.players[seat].melds):
+            return False
+        self._finish_win(seat, "天胡")
         return True
 
     @staticmethod
@@ -2027,10 +2126,12 @@ class WenlingMahjongGame:
         self._add_final_bao_candidates(winner, discarder, win_tile)
         bao = self._select_bao_liability(winner)
         scores = []
+        final_hands: list[Counter[str]] = []
         for seat, player in enumerate(self.players):
             scoring_hand = Counter(player.hand)
             if seat == winner and win_tile and discarder is not None:
                 scoring_hand[win_tile] += 1
+            final_hands.append(Counter(scoring_hand))
             scores.append(
                 score_player(
                     scoring_hand,
@@ -2052,9 +2153,11 @@ class WenlingMahjongGame:
         deltas = self._deltas_from_transactions(transactions)
         for seat, delta in enumerate(deltas):
             self.players[seat].chips += delta
+        hand_luck = self._record_hand_luck(winner, final_hands, win_type=win_type)
 
         self.settlement = {
             "winner": winner,
+            "discarder": discarder,
             "win_type": win_type,
             "reason": reason,
             "win_tile": win_tile,
@@ -2063,6 +2166,7 @@ class WenlingMahjongGame:
             "scores": scores,
             "deltas": deltas,
             "point_deltas": list(deltas),
+            "hand_luck": hand_luck,
             "transactions": transactions,
             "bao": {
                 "seat": bao.liable_seat,
@@ -2089,13 +2193,16 @@ class WenlingMahjongGame:
         self.phase = "round_over"
         self.winner = None
         self.win_type = "黄牌"
+        hand_luck = self._record_hand_luck(None)
         self.settlement = {
             "winner": None,
+            "discarder": None,
             "win_type": "黄牌",
             "reason": reason,
             "scores": [],
             "deltas": [0, 0, 0, 0],
             "point_deltas": [0, 0, 0, 0],
+            "hand_luck": hand_luck,
             "duration_sec": round(time.time() - self.round_started_at, 2),
         }
         self._log("draw_game", f"黄牌：{reason}")
@@ -2125,6 +2232,9 @@ class WenlingMahjongGame:
         return {
             "seat": seat,
             "hand": dict(player.hand),
+            "last_draw": self.last_draw.get(seat)
+            if self.last_draw.get(seat) in player.hand
+            else None,
             "flowers": list(player.flowers),
             "de_count": sum(player.hand.get(code, 0) for code in self.de_set),
             "public": {

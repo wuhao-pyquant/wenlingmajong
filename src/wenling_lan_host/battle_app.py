@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import threading
 import json
+import gc
+import os
+import platform
 import random
 import time
 from collections import Counter, deque
@@ -11,17 +14,146 @@ from typing import Any
 from .battle_db import AI_ACCOUNTS, BattleDatabase
 from .bug_reports import BUG_REPORT_SCHEMA_VERSION, BugReportStore, json_safe
 from wenling_core.game import WenlingMahjongGame
-from wenling_core.tiles import build_wall
+from wenling_core.tiles import TILE_ORDER, build_wall, is_suited
 from wenling_core.validation import validate_game_state
 
 
 PRESENCE_ONLINE_SEC = 35.0
 PRESENCE_SWEEP_SEC = 1.0
 BATTLE_ACTION_DELAY_SEC = 0.0
-BATTLE_AI_DECISION_TIMEOUT_SEC = 2.0
+BATTLE_AI_DECISION_TIMEOUT_SEC = 8.0
 RUNTIME_EVENT_LOG_LIMIT = 50
 SLOW_API_THRESHOLD_MS = 200.0
 BUG_SNAPSHOT_INTERVAL_SEC = 0.5
+AI_POLICY_LOW = "low"
+AI_POLICY_HIGH = "high"
+DEFAULT_AI_POLICY = AI_POLICY_LOW
+AVAILABLE_AI_POLICIES = [AI_POLICY_LOW, AI_POLICY_HIGH]
+AI_POLICY_ALIASES = {
+    "low": AI_POLICY_LOW,
+    "low_latency": AI_POLICY_LOW,
+    "fast": AI_POLICY_LOW,
+    "medium": AI_POLICY_HIGH,
+    "normal": AI_POLICY_HIGH,
+    "tile_efficiency": AI_POLICY_HIGH,
+    "high": AI_POLICY_HIGH,
+    "unlimited": AI_POLICY_HIGH,
+}
+AI_POLICY_LABELS = {
+    AI_POLICY_LOW: "低级",
+    AI_POLICY_HIGH: "高级",
+}
+AI_POLICY_TIMEOUTS = {
+    AI_POLICY_LOW: 0.1,
+    AI_POLICY_HIGH: 60.0 * 60.0,
+}
+
+
+class LowLatencyPolicyModel:
+    """Very cheap runtime policy for constrained Android hosts.
+
+    It intentionally avoids normal shanten / ukeire search. The goal is to keep
+    LAN play responsive on phones; desktop debug still uses the full
+    TileEfficiencyPolicyModel.
+    """
+
+    backend = "low_latency"
+
+    def summary(self) -> dict[str, Any]:
+        return {"backend": self.backend, "trained_games": 0, "experience_count": 0, "weights": 0}
+
+    def choose_action(
+        self,
+        observation: dict[str, Any],
+        legal_actions: list[dict[str, Any]],
+        explore: float = 0.0,
+    ) -> dict[str, Any]:
+        if not legal_actions:
+            return {"type": "pass"}
+        hu = next((dict(action) for action in legal_actions if action.get("type") == "hu"), None)
+        if hu is not None:
+            return hu
+        discards = [dict(action) for action in legal_actions if action.get("type") == "discard"]
+        if discards:
+            last_draw = str(observation.get("last_draw") or "")
+            if last_draw:
+                drawn_discard = next(
+                    (action for action in discards if str(action.get("tile") or "") == last_draw),
+                    None,
+                )
+                if drawn_discard is not None:
+                    return drawn_discard
+            return min(discards, key=lambda action: self._discard_keep_score(observation, str(action.get("tile") or "")))
+        pass_action = next((dict(action) for action in legal_actions if action.get("type") == "pass"), None)
+        if pass_action is not None:
+            return pass_action
+        return dict(legal_actions[0])
+
+    def score_action(self, observation: dict[str, Any], action: dict[str, Any]) -> float:
+        if action.get("type") == "hu":
+            return 10_000.0
+        if action.get("type") == "discard":
+            keep, count_bias, order = self._discard_keep_score(observation, str(action.get("tile") or ""))
+            return -float(keep * 1000 + count_bias * 10 + order / 100.0)
+        if action.get("type") == "pass":
+            return 0.0
+        return -10.0
+
+    def score_actions(
+        self,
+        observation: dict[str, Any],
+        legal_actions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        rows = [
+            {"action": dict(action), "label": str(action.get("type") or ""), "score": self.score_action(observation, action)}
+            for action in legal_actions
+        ]
+        rows.sort(key=lambda item: float(item["score"]), reverse=True)
+        return rows
+
+    def explain_decision(
+        self,
+        observation: dict[str, Any],
+        chosen: dict[str, Any],
+        legal_actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        ranked = self.score_actions(observation, legal_actions)[:5]
+        return {
+            "score": 80,
+            "chosen": str(chosen.get("type") or ""),
+            "best": ranked[0]["label"] if ranked else None,
+            "bad": False,
+            "reason": "安卓低延迟模式使用轻量策略，优先保证联机响应速度。",
+            "suggestion": "需要完整牌效复盘时使用 PC 端或公网服务端。",
+            "ranked": [{"label": item["label"], "score": round(float(item["score"]), 2)} for item in ranked],
+        }
+
+    def _discard_keep_score(self, observation: dict[str, Any], tile: str) -> tuple[int, int, int]:
+        hand = Counter(observation.get("hand") or {})
+        public = observation.get("public") or {}
+        de_set = set(public.get("de_set") or observation.get("de_set") or [])
+        count = int(hand.get(tile, 0))
+        keep = 0
+        if tile in de_set:
+            keep += 100
+        if count >= 2:
+            keep += 20 + count * 4
+        if is_suited(tile) and len(tile) >= 2:
+            suit = tile[0]
+            try:
+                rank = int(tile[1:])
+            except ValueError:
+                rank = 0
+            for delta, weight in ((-2, 1), (-1, 4), (1, 4), (2, 1)):
+                near = rank + delta
+                if 1 <= near <= 9:
+                    keep += int(hand.get(f"{suit}{near}", 0)) * weight
+            if rank in {1, 9}:
+                keep -= 2
+        else:
+            keep += count * 2
+        order = TILE_ORDER.index(tile) if tile in TILE_ORDER else 999
+        return (keep, -count, order)
 
 
 class BattleSession:
@@ -31,17 +163,24 @@ class BattleSession:
         log_dir: str,
         model_factory: Any,
         analysis_model_factory: Any,
+        runtime_context: dict[str, Any] | None = None,
+        bug_report_export_dir: str | Path | None = None,
+        auto_bug_snapshots: bool = True,
+        low_latency_ai: bool = False,
+        ticker_interval_sec: float = 0.05,
     ):
         self.db = db
         self.log_dir = log_dir
         self.model_factory = model_factory
         self.analysis_model_factory = analysis_model_factory
         self.lock = threading.RLock()
-        self.ai_policy = "tile_efficiency"
+        self.ai_policy = DEFAULT_AI_POLICY
         self.seats: list[str | None] = [None, None, None, None]
         self.ready: set[str] = set()
         self.game: WenlingMahjongGame | None = None
         self.account_chips: dict[str, int] = {}
+        self.room_luck: dict[str, dict[str, float | int]] = {}
+        self.room_round_count = 0
         self.revision = 0
         self.room_generation = 1
         self.event_seq = 0
@@ -49,6 +188,10 @@ class BattleSession:
         self.room_events: list[dict[str, Any]] = []
         self.last_slow_events: list[dict[str, Any]] = []
         self.api_timing_buckets: dict[str, dict[str, Any]] = {}
+        self.runtime_context = dict(runtime_context or {})
+        self.auto_bug_snapshots = bool(auto_bug_snapshots)
+        self.low_latency_ai = bool(low_latency_ai)
+        self.ticker_interval_sec = max(0.05, float(ticker_interval_sec))
         self._active_room_events: list[dict[str, Any]] = []
         self._room_event_queue: deque[dict[str, Any]] = deque()
         self._room_event_next_id = 0
@@ -57,7 +200,10 @@ class BattleSession:
         self._closed = False
         self._waiter_count = 0
         self._ai_thinking_count = 0
-        self.bug_report_store = BugReportStore(Path(log_dir) / "bug_reports")
+        self.bug_report_store = BugReportStore(
+            Path(log_dir) / "bug_reports",
+            export_root=bug_report_export_dir,
+        )
         self._last_bug_snapshot_at = 0.0
         self.condition = threading.Condition(self.lock)
         self.last_seen: dict[str, float] = {}
@@ -89,13 +235,59 @@ class BattleSession:
         if store is not None:
             store.close()
 
+    def close_room(self, reason: str = "closed") -> dict[str, Any]:
+        with self.condition:
+            self._ensure_runtime_fields_locked()
+            self._snapshot_game_chips_locked()
+            self.game = None
+            self.seats = [None, None, None, None]
+            self.ready.clear()
+            self.account_chips.clear()
+            self._new_room_generation_locked(reason)
+            self._bump_revision("room_closed", {"reason": reason})
+            self.condition.notify_all()
+            return self.serialize_for_account(None)
+
     def register(self, account: str) -> dict[str, Any]:
         with self.lock:
             row = self.db.ensure_account(account, is_ai=False)
             return {"ok": True, "account": row["account_name"], "db": self.db.info()}
 
+    def register_player(self, account: str) -> dict[str, Any]:
+        raise ValueError("public registration requires an invite code and password")
+
+    def record_opening(
+        self,
+        account_name: str,
+        opening_shanten: int,
+        de_draws: int,
+        fan_flower_draws: int,
+    ) -> None:
+        self.db.record_opening(account_name, opening_shanten, de_draws, fan_flower_draws)
+
+    def record_win(
+        self,
+        account_name: str,
+        win_type: str,
+        win_turn: int | None = None,
+        win_points: int | None = None,
+    ) -> None:
+        self.db.record_win(account_name, win_type, win_turn=win_turn, win_points=win_points)
+
+    def record_hand_luck(self, account_name: str, luck_score: float) -> None:
+        self.db.record_hand_luck(account_name, luck_score)
+        with self.lock:
+            current = self.room_luck.setdefault(
+                account_name,
+                {"luck_score_total": 0.0, "luck_score_count": 0},
+            )
+            current["luck_score_total"] = float(current["luck_score_total"]) + float(luck_score)
+            current["luck_score_count"] = int(current["luck_score_count"]) + 1
+
     def login(self, account: str) -> dict[str, Any]:
-        return self.register(account)
+        with self.lock:
+            row = self.db.require_active_human_account(account)
+            return {"ok": True, "account": row["account_name"], "db": self.db.info()}
 
     def sit(
         self,
@@ -119,7 +311,7 @@ class BattleSession:
         with self.lock:
             self._ensure_runtime_fields_locked()
             self._validate_supplied_room_generation_locked(room_generation)
-            name = self.db.ensure_account(account, is_ai=False)["account_name"]
+            name = self.db.require_active_human_account(account)["account_name"]
             self._touch_account(name)
             seat = int(seat)
             if seat < 0 or seat >= 4:
@@ -253,7 +445,139 @@ class BattleSession:
             return payload
 
     def set_ai_policy(self, policy: str) -> None:
-        self.ai_policy = "tile_efficiency"
+        self.ai_policy = self._normalize_ai_policy(policy)
+
+    def _apply_ready_ai_policy_locked(self, policy: str | None) -> None:
+        if policy is None:
+            self.set_ai_policy(getattr(self, "ai_policy", DEFAULT_AI_POLICY))
+            return
+        normalized = self._normalize_ai_policy(policy)
+        current = self._active_ai_policy_locked()
+        if current == AI_POLICY_HIGH and normalized == AI_POLICY_LOW:
+            return
+        self.ai_policy = normalized
+
+    def _normalize_ai_policy(self, policy: str | None) -> str:
+        key = str(policy or "").strip().lower()
+        if not key:
+            key = str(getattr(self, "ai_policy", "") or DEFAULT_AI_POLICY).strip().lower()
+        normalized = AI_POLICY_ALIASES.get(key)
+        if normalized is None:
+            raise ValueError("AI 等级必须是 low 或 high")
+        return normalized
+
+    def _active_ai_policy_locked(self) -> str:
+        self._ensure_runtime_fields_locked()
+        return self._normalize_ai_policy(getattr(self, "ai_policy", DEFAULT_AI_POLICY))
+
+    def _ai_policy_payload_locked(self) -> dict[str, Any]:
+        active = self._active_ai_policy_locked()
+        return {
+            "current": active,
+            "available": [
+                {"value": policy, "label": AI_POLICY_LABELS[policy]}
+                for policy in AVAILABLE_AI_POLICIES
+            ],
+            "timeout_sec": AI_POLICY_TIMEOUTS[active],
+        }
+
+    def _ai_policy_uses_tile_efficiency(self, policy: str) -> bool:
+        return policy == AI_POLICY_HIGH
+
+    def _make_analysis_model_locked(self, policy: str) -> Any:
+        return self.analysis_model_factory() if self._ai_policy_uses_tile_efficiency(policy) else LowLatencyPolicyModel()
+
+    def _make_ai_model_locked(self, policy: str) -> Any:
+        return self.model_factory("tile_efficiency") if self._ai_policy_uses_tile_efficiency(policy) else LowLatencyPolicyModel()
+
+    def admin_set_seat(
+        self,
+        account: str,
+        seat: int,
+        room_generation: int | str | None = None,
+    ) -> dict[str, Any]:
+        return self._run_room_event(
+            "admin_set_seat",
+            "admin_set_seat",
+            lambda _started_at: self._admin_set_seat_impl(account, seat, room_generation),
+            {"account": account, "seat": int(seat)},
+        )
+
+    def _admin_set_seat_impl(
+        self,
+        account: str,
+        seat: int,
+        room_generation: int | str | None,
+    ) -> dict[str, Any]:
+        with self.lock:
+            self._ensure_runtime_fields_locked()
+            self._validate_supplied_room_generation_locked(room_generation)
+            if self.game is not None and self.game.phase != "round_over":
+                raise ValueError("当前小局进行中，结束后才能调整座位")
+            name = str(self.db.require_active_human_account(account)["account_name"])
+            destination = int(seat)
+            if not 0 <= destination < 4:
+                raise ValueError("座位必须是 0-3")
+            source = self._seat_for(name)
+            displaced = self.seats[destination]
+            if source == destination:
+                return self.serialize_for_account(None)
+            if source is not None:
+                self.seats[source] = displaced
+            self.seats[destination] = name
+            self.ready.discard(name)
+            if displaced:
+                self.ready.discard(displaced)
+            if self.game is not None:
+                self._snapshot_game_chips_locked()
+                self.game = None
+                self.ready.clear()
+                self._new_room_generation_locked("admin_set_seat")
+            self._bump_revision(
+                "admin_set_seat",
+                {"account": name, "seat": destination, "displaced": displaced},
+            )
+            return self.serialize_for_account(None)
+
+    def admin_clear_seat(
+        self,
+        seat: int,
+        room_generation: int | str | None = None,
+    ) -> dict[str, Any]:
+        return self._run_room_event(
+            "admin_clear_seat",
+            "admin_clear_seat",
+            lambda _started_at: self._admin_clear_seat_impl(seat, room_generation),
+            {"seat": int(seat)},
+        )
+
+    def _admin_clear_seat_impl(
+        self,
+        seat: int,
+        room_generation: int | str | None,
+    ) -> dict[str, Any]:
+        with self.lock:
+            self._ensure_runtime_fields_locked()
+            self._validate_supplied_room_generation_locked(room_generation)
+            if self.game is not None and self.game.phase != "round_over":
+                raise ValueError("当前小局进行中，结束后才能清空座位")
+            index = int(seat)
+            if not 0 <= index < 4:
+                raise ValueError("座位必须是 0-3")
+            removed = self.seats[index]
+            self.seats[index] = None
+            if removed:
+                self.ready.discard(removed)
+                self.last_seen.pop(removed, None)
+            if self.game is not None:
+                self._snapshot_game_chips_locked()
+                self.game = None
+                self.ready.clear()
+                self._new_room_generation_locked("admin_clear_seat")
+            if not self._human_accounts():
+                self.account_chips.clear()
+            self._bump_revision("admin_clear_seat", {"seat": index, "account": removed})
+            return self.serialize_for_account(None)
 
     def ready_account(
         self,
@@ -277,7 +601,7 @@ class BattleSession:
         with self.lock:
             self._ensure_runtime_fields_locked()
             self._validate_supplied_room_generation_locked(room_generation)
-            self.set_ai_policy("tile_efficiency")
+            self._apply_ready_ai_policy_locked(ai_policy)
             name = self.db.normalize_account(account)
             self._touch_account(name)
             if name not in self.seats:
@@ -298,6 +622,7 @@ class BattleSession:
                     self._snapshot_game_chips_locked()
                     self.ready.clear()
                     self.game.new_round()
+                    self.room_round_count += 1
             self._bump_revision("ready", {"account": name})
             payload = self.serialize_for_account(name)
             return payload
@@ -312,8 +637,10 @@ class BattleSession:
             self._validate_supplied_room_generation_locked(room_generation)
             if account:
                 self._touch_account(account)
+                if account not in self.seats:
+                    raise ValueError("只有已入座玩家才能重新换座")
             if self.game is not None and self.game.phase != "round_over":
-                raise ValueError("round must be over before resetting seats")
+                raise ValueError("本局进行中，结算后才能重新换座")
             self._snapshot_game_chips_locked()
             humans = [seat_account for seat_account in self.seats if seat_account and seat_account not in AI_ACCOUNTS]
             if humans:
@@ -445,7 +772,7 @@ class BattleSession:
                     if remaining <= 0:
                         timed_out = True
                         break
-                    self.condition.wait(timeout=min(remaining, 1.0))
+                    self.condition.wait(timeout=remaining)
             finally:
                 waited_ms = (time.time() - wait_started_at) * 1000.0
                 self._waiter_count = max(0, self._waiter_count - 1)
@@ -483,6 +810,19 @@ class BattleSession:
             self._record_api_timing_locked("state", started_at)
             return payload
 
+    def host_status(self) -> dict[str, Any]:
+        with self.lock:
+            self._ensure_runtime_fields_locked()
+            return {
+                "room_generation": self.room_generation,
+                "room_revision": self.revision,
+                "event_seq": self.event_seq,
+                "phase": self.game.phase if self.game is not None else None,
+                "game_started": self.game is not None,
+                "seats": self._seat_payload(),
+                "ready_accounts": sorted(self.ready),
+            }
+
     def db_info(self) -> dict[str, Any]:
         return self.db.info()
 
@@ -501,29 +841,27 @@ class BattleSession:
         account: str,
         room_generation: int | str | None = None,
     ) -> dict[str, Any]:
-        def run(started_at: float) -> dict[str, Any]:
+        started_at = time.time()
+        with self.condition:
             self._ensure_runtime_fields_locked()
             self._validate_supplied_room_generation_locked(room_generation)
             name = self.db.normalize_account(account)
             self._touch_account(name)
             payload = {"ok": True, "account": name, "presence": self._presence_payload(name)}
+            self._record_api_timing_locked("heartbeat", started_at)
             return payload
-
-        return self._run_room_event(
-            "heartbeat",
-            "heartbeat",
-            run,
-            {"account": account},
-        )
 
     def _start_game(self) -> None:
         self._ensure_runtime_fields_locked()
         self._new_room_generation_locked("start_game")
         accounts = self._effective_accounts()
-        analysis = self.analysis_model_factory()
-        ai_model = self.model_factory(self.ai_policy)
+        policy = self._active_ai_policy_locked()
+        low_policy = policy == AI_POLICY_LOW
+        analysis = self._make_analysis_model_locked(policy)
+        ai_model = self._make_ai_model_locked(policy)
         seat_models = [analysis if account not in AI_ACCOUNTS else ai_model for account in accounts]
         human_seats = {idx for idx, account in enumerate(accounts) if account not in AI_ACCOUNTS}
+        defer_responses = bool(human_seats)
         self.game = WenlingMahjongGame(
             model=analysis,
             log_dir=self.log_dir,
@@ -531,19 +869,20 @@ class BattleSession:
             human_seats=human_seats,
             training=False,
             seat_models=seat_models,
-            persist_logs=True,
-            defer_ai_responses=True,
+            persist_logs=not low_policy,
+            defer_ai_responses=defer_responses,
             response_delay_sec=BATTLE_ACTION_DELAY_SEC,
-            ai_decision_timeout_sec=BATTLE_AI_DECISION_TIMEOUT_SEC,
-            stats_recorder=self.db,
-            ai_result_callback=self._submit_ai_result_event,
-            ai_context_provider=self._ai_result_context_for_game,
+            ai_decision_timeout_sec=AI_POLICY_TIMEOUTS[policy],
+            stats_recorder=self,
+            ai_result_callback=self._submit_ai_result_event if defer_responses else None,
+            ai_context_provider=self._ai_result_context_for_game if defer_responses else None,
         )
         for player, account in zip(self.game.players, accounts):
             player.name = account
             player.chips = int(getattr(self, "account_chips", {}).get(account, 0))
         self.ready.clear()
         self.game.new_round()
+        self.room_round_count += 1
         self._validate_game_locked()
 
     def _all_humans_ready(self) -> bool:
@@ -611,7 +950,7 @@ class BattleSession:
                 continue
             self.game.players[seat].name = account
             if account in AI_ACCOUNTS and 0 <= seat < len(self.game.seat_models):
-                self.game.seat_models[seat] = self.model_factory(self.ai_policy)
+                self.game.seat_models[seat] = self._make_ai_model_locked(self._active_ai_policy_locked())
 
     def _ai_result_context_for_game(self, metadata: dict[str, Any]) -> dict[str, Any]:
         self._ensure_runtime_fields_locked()
@@ -690,12 +1029,14 @@ class BattleSession:
             "room_generation": self.room_generation,
             "event_seq": self.event_seq,
             "pending_id": None,
+            "room_round_count": self.room_round_count,
             "runtime": self._runtime_payload_locked(pending_id=None),
             "seats": self._seat_payload(),
             "ready_accounts": sorted(self.ready),
             "all_humans_ready": self._all_humans_ready(),
-            "ai_policy": self.ai_policy,
-            "available_ai_policies": ["tile_efficiency"],
+            "ai_policy": self._active_ai_policy_locked(),
+            "available_ai_policies": list(AVAILABLE_AI_POLICIES),
+            "ai_policy_info": self._ai_policy_payload_locked(),
             "player_stats": self._stats_payload(),
             "bug_report": self.bug_report_store.status(),
             "db": self.db.info(),
@@ -726,6 +1067,7 @@ class BattleSession:
         payload["room_generation"] = self.room_generation
         payload["event_seq"] = self.event_seq
         payload["pending_id"] = pending_id
+        payload["room_round_count"] = int(getattr(self, "room_round_count", 0) or 0)
         payload["runtime"] = self._runtime_payload_locked(pending_id=pending_id)
         payload["seats"] = self._seat_payload(viewer)
         effective = self._seat_effective_accounts()
@@ -747,8 +1089,9 @@ class BattleSession:
                 player["online"] = presence["online"]
                 player["last_seen_age_sec"] = presence["last_seen_age_sec"]
         payload["ready_accounts"] = sorted(self.ready)
-        payload["ai_policy"] = self.ai_policy
-        payload["available_ai_policies"] = ["tile_efficiency"]
+        payload["ai_policy"] = self._active_ai_policy_locked()
+        payload["available_ai_policies"] = list(AVAILABLE_AI_POLICIES)
+        payload["ai_policy_info"] = self._ai_policy_payload_locked()
         payload["rule_issues"] = list(getattr(self, "last_rule_issues", []))
         payload["player_stats"] = self._stats_payload()
         payload["bug_report"] = self.bug_report_store.status()
@@ -765,6 +1108,10 @@ class BattleSession:
         return payload
 
     def _ensure_runtime_fields_locked(self) -> None:
+        if not hasattr(self, "room_luck"):
+            self.room_luck = {}
+        if not hasattr(self, "room_round_count"):
+            self.room_round_count = int(getattr(self.game, "round_no", 0) or 0) if self.game is not None else 0
         if not hasattr(self, "room_generation"):
             self.room_generation = 1
         if not hasattr(self, "event_seq"):
@@ -777,6 +1124,17 @@ class BattleSession:
             self.last_slow_events = []
         if not hasattr(self, "api_timing_buckets"):
             self.api_timing_buckets = {}
+        if not hasattr(self, "ai_policy"):
+            self.ai_policy = DEFAULT_AI_POLICY
+        self.ai_policy = self._normalize_ai_policy(self.ai_policy)
+        if not hasattr(self, "runtime_context"):
+            self.runtime_context = {}
+        if not hasattr(self, "auto_bug_snapshots"):
+            self.auto_bug_snapshots = True
+        if not hasattr(self, "low_latency_ai"):
+            self.low_latency_ai = False
+        if not hasattr(self, "ticker_interval_sec"):
+            self.ticker_interval_sec = 0.05
         if not hasattr(self, "_active_room_events"):
             self._active_room_events = []
         if not hasattr(self, "_room_event_queue"):
@@ -863,12 +1221,22 @@ class BattleSession:
                 }
                 self._processing_room_event = True
                 self._active_room_events.append(active)
+                handler_started_at = time.time()
                 try:
                     with self.lock:
                         result = handler(started_at)
                     return result
                 finally:
-                    self._record_api_timing_locked(str(api), started_at, {"event_type": event_type, **dict(details or {})})
+                    self._record_api_timing_locked(
+                        str(api),
+                        started_at,
+                        {
+                            "event_type": event_type,
+                            "queue_wait_ms": round((handler_started_at - started_at) * 1000.0, 1),
+                            **dict(details or {}),
+                        },
+                        queue_wait_ms=(handler_started_at - started_at) * 1000.0,
+                    )
                     if self._active_room_events and self._active_room_events[-1] is active:
                         self._active_room_events.pop()
                     elif active in self._active_room_events:
@@ -947,6 +1315,11 @@ class BattleSession:
                 self._active_room_events.append(active)
             error: BaseException | None = None
             result: Any = None
+            handler_started_at = time.time()
+            queue_wait_ms = max(
+                0.0,
+                (handler_started_at - float(queued_event["started_at_raw"])) * 1000.0,
+            )
             try:
                 with self.lock:
                     result = queued_event["handler"](queued_event["started_at_raw"])
@@ -958,7 +1331,12 @@ class BattleSession:
                 self._record_api_timing_locked(
                     str(queued_event["api"]),
                     float(queued_event["started_at_raw"]),
-                    {"event_type": queued_event["event_type"], **dict(queued_event.get("details") or {})},
+                    {
+                        "event_type": queued_event["event_type"],
+                        "queue_wait_ms": round(queue_wait_ms, 1),
+                        **dict(queued_event.get("details") or {}),
+                    },
+                    queue_wait_ms=queue_wait_ms,
                 )
                 if self._active_room_events and self._active_room_events[-1] is active:
                     self._active_room_events.pop()
@@ -978,12 +1356,25 @@ class BattleSession:
         self._ensure_runtime_fields_locked()
         current_pending_id = pending_id if pending_id is not None else self._current_pending_id_locked(create=False)
         ai_thinking_count = self._ai_thinking_count_locked()
+        model_backends: list[str] = []
+        if self.game is not None:
+            model_backends = [
+                str(getattr(model, "backend", type(model).__name__))
+                for model in getattr(self.game, "seat_models", [])
+            ]
+        policy = self._active_ai_policy_locked()
         return {
             "room_generation": self.room_generation,
             "event_seq": self.event_seq,
             "pending_id": current_pending_id,
             "waiter_count": self._waiter_count,
             "ai_thinking_count": ai_thinking_count,
+            "ai_policy": policy,
+            "ai_policy_label": AI_POLICY_LABELS[policy],
+            "ai_decision_timeout_sec": AI_POLICY_TIMEOUTS[policy],
+            "low_latency_ai": policy == AI_POLICY_LOW,
+            "ticker_interval_sec": float(getattr(self, "ticker_interval_sec", 0.05)),
+            "model_backends": model_backends,
             "room_event_queue_length": len(self._room_event_queue),
             "processing_room_event": bool(self._processing_room_event),
             "api_timing_buckets": {
@@ -1014,17 +1405,23 @@ class BattleSession:
         extra: dict[str, Any] | None = None,
         *,
         excluded_elapsed_ms: float = 0.0,
+        queue_wait_ms: float = 0.0,
     ) -> None:
         self._ensure_runtime_fields_locked()
         elapsed_ms = (time.time() - started_at) * 1000.0
-        processing_ms = max(0.0, elapsed_ms - max(0.0, float(excluded_elapsed_ms)))
-        self._record_api_bucket_locked(api, elapsed_ms, processing_ms)
-        if processing_ms < SLOW_API_THRESHOLD_MS:
+        queue_wait_ms = max(0.0, float(queue_wait_ms))
+        processing_ms = max(
+            0.0,
+            elapsed_ms - max(0.0, float(excluded_elapsed_ms)) - queue_wait_ms,
+        )
+        self._record_api_bucket_locked(api, elapsed_ms, processing_ms, queue_wait_ms)
+        if processing_ms < SLOW_API_THRESHOLD_MS and queue_wait_ms < SLOW_API_THRESHOLD_MS:
             return
         event = {
             "api": api,
             "elapsed_ms": round(elapsed_ms, 1),
             "processing_ms": round(processing_ms, 1),
+            "queue_wait_ms": round(queue_wait_ms, 1),
             "room_generation": self.room_generation,
             "event_seq": self.event_seq,
             "pending_id": self._current_pending_id_locked(create=False),
@@ -1037,14 +1434,26 @@ class BattleSession:
         self.last_slow_events.append(event)
         del self.last_slow_events[:-RUNTIME_EVENT_LOG_LIMIT]
 
-    def _record_api_bucket_locked(self, api: str, elapsed_ms: float, processing_ms: float) -> None:
+    def _record_api_bucket_locked(
+        self,
+        api: str,
+        elapsed_ms: float,
+        processing_ms: float,
+        queue_wait_ms: float = 0.0,
+    ) -> None:
         timing = self.api_timing_buckets.setdefault(
             str(api),
             {
                 "count": 0,
                 "last_elapsed_ms": 0.0,
                 "last_processing_ms": 0.0,
+                "last_queue_wait_ms": 0.0,
+                "total_elapsed_ms": 0.0,
+                "total_processing_ms": 0.0,
+                "total_queue_wait_ms": 0.0,
+                "max_elapsed_ms": 0.0,
                 "max_processing_ms": 0.0,
+                "max_queue_wait_ms": 0.0,
                 "processing_buckets": {
                     "lt_50_ms": 0,
                     "50_to_199_ms": 0,
@@ -1054,10 +1463,25 @@ class BattleSession:
             },
         )
         timing["count"] = int(timing.get("count", 0)) + 1
-        timing["last_elapsed_ms"] = round(max(0.0, float(elapsed_ms)), 1)
-        timing["last_processing_ms"] = round(max(0.0, float(processing_ms)), 1)
+        elapsed_ms = max(0.0, float(elapsed_ms))
+        processing_ms = max(0.0, float(processing_ms))
+        queue_wait_ms = max(0.0, float(queue_wait_ms))
+        timing["last_elapsed_ms"] = round(elapsed_ms, 1)
+        timing["last_processing_ms"] = round(processing_ms, 1)
+        timing["last_queue_wait_ms"] = round(queue_wait_ms, 1)
+        timing["total_elapsed_ms"] = round(float(timing.get("total_elapsed_ms", 0.0)) + elapsed_ms, 1)
+        timing["total_processing_ms"] = round(float(timing.get("total_processing_ms", 0.0)) + processing_ms, 1)
+        timing["total_queue_wait_ms"] = round(float(timing.get("total_queue_wait_ms", 0.0)) + queue_wait_ms, 1)
+        timing["max_elapsed_ms"] = round(
+            max(float(timing.get("max_elapsed_ms", 0.0)), elapsed_ms),
+            1,
+        )
         timing["max_processing_ms"] = round(
-            max(float(timing.get("max_processing_ms", 0.0)), max(0.0, float(processing_ms))),
+            max(float(timing.get("max_processing_ms", 0.0)), processing_ms),
+            1,
+        )
+        timing["max_queue_wait_ms"] = round(
+            max(float(timing.get("max_queue_wait_ms", 0.0)), queue_wait_ms),
             1,
         )
         buckets = timing["processing_buckets"]
@@ -1115,6 +1539,8 @@ class BattleSession:
     def _cache_latest_round_locked(self, reason: str, *, force: bool = False) -> None:
         if self.game is None:
             return
+        if not getattr(self, "auto_bug_snapshots", True):
+            return
         now = time.monotonic()
         force = force or self.game.phase == "round_over"
         if (
@@ -1144,6 +1570,7 @@ class BattleSession:
                 "api": item.get("api"),
                 "details": json_safe(item.get("details") or {}),
                 "started_at": item.get("started_at"),
+                "age_ms": round((time.time() - float(item.get("started_at_raw") or time.time())) * 1000.0, 1),
                 "done": bool(item.get("done")),
                 "error": repr(item.get("error")) if item.get("error") else None,
             }
@@ -1181,6 +1608,7 @@ class BattleSession:
                         "event_type": item.get("event_type"),
                         "queue_id": item.get("queue_id"),
                         "started_at": item.get("started_at"),
+                        "age_ms": round((time.time() - float(item.get("started_at_raw") or time.time())) * 1000.0, 1),
                         "details": json_safe(item.get("details") or {}),
                     }
                     for item in self._active_room_events
@@ -1237,12 +1665,38 @@ class BattleSession:
                 },
             },
             "diagnostics": {
+                "runtime_context": json_safe(self.runtime_context),
+                "process": self._process_diagnostics_locked(),
+                "bug_report_paths": {
+                    "latest_path": str(self.bug_report_store.latest_path),
+                    "export_latest_path": str(self.bug_report_store.export_latest_path) if self.bug_report_store.export_latest_path else None,
+                },
                 "rule_issues": validate_game_state(game),
                 "physical_tile_counts": dict(physical_counts),
                 "indicator_consumed": game.de_indicator,
                 "last_slow_events": list(self.last_slow_events),
                 "api_timing_buckets": json_safe(self.api_timing_buckets),
             },
+        }
+
+    def _process_diagnostics_locked(self) -> dict[str, Any]:
+        threads = threading.enumerate()
+        return {
+            "pid": os.getpid(),
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "process_time_sec": round(time.process_time(), 3),
+            "monotonic_sec": round(time.monotonic(), 3),
+            "thread_count": len(threads),
+            "threads": [
+                {
+                    "name": thread.name,
+                    "daemon": thread.daemon,
+                    "alive": thread.is_alive(),
+                }
+                for thread in threads
+            ],
+            "gc_count": list(gc.get_count()),
         }
 
     def _touch_account(self, account: str | None) -> None:
@@ -1287,7 +1741,7 @@ class BattleSession:
 
     def _ticker_loop(self) -> None:
         while True:
-            time.sleep(0.05)
+            time.sleep(max(0.05, float(getattr(self, "ticker_interval_sec", 0.05))))
             try:
                 with self.condition:
                     if getattr(self, "_closed", False):
@@ -1501,11 +1955,48 @@ class BattleSession:
             if "winner" in settlement:
                 settlement["absolute_winner"] = settlement.get("winner")
                 settlement["winner"] = rel(settlement.get("winner"))
+            if settlement.get("discarder") is not None:
+                settlement["absolute_discarder"] = settlement.get("discarder")
+                settlement["discarder"] = rel(settlement.get("discarder"))
             for key in ("scores", "deltas", "point_deltas"):
                 values = settlement.get(key)
                 if isinstance(values, list) and len(values) >= 4:
                     settlement[key] = [values[absolute] for absolute in order]
+            hand_luck = settlement.get("hand_luck")
+            if isinstance(hand_luck, list) and len(hand_luck) >= 4:
+                rotated_luck = []
+                for absolute in order:
+                    item = dict(hand_luck[absolute])
+                    item["absolute_seat"] = absolute
+                    item["seat"] = relative_by_absolute[absolute]
+                    rotated_luck.append(item)
+                settlement["hand_luck"] = rotated_luck
             payload["settlement"] = settlement
+
+        temporary_bao = payload.get("temporary_bao")
+        if isinstance(temporary_bao, dict):
+            temporary_bao = dict(temporary_bao)
+            if "seat" in temporary_bao:
+                temporary_bao["absolute_seat"] = temporary_bao.get("seat")
+                temporary_bao["seat"] = rel(temporary_bao.get("seat"))
+            payload["temporary_bao"] = temporary_bao
+
+        bao_liabilities = payload.get("bao_liabilities")
+        if isinstance(bao_liabilities, list):
+            rotated_liabilities = []
+            for raw_item in bao_liabilities:
+                if not isinstance(raw_item, dict):
+                    rotated_liabilities.append(raw_item)
+                    continue
+                item = dict(raw_item)
+                if "liable_seat" in item:
+                    item["absolute_liable_seat"] = item.get("liable_seat")
+                    item["liable_seat"] = rel(item.get("liable_seat"))
+                if "target_winner" in item:
+                    item["absolute_target_winner"] = item.get("target_winner")
+                    item["target_winner"] = rel(item.get("target_winner"))
+                rotated_liabilities.append(item)
+            payload["bao_liabilities"] = rotated_liabilities
 
         history = []
         for raw_entry in payload.get("history", []):
@@ -1544,5 +2035,19 @@ class BattleSession:
     def _stats_payload(self) -> list[dict[str, Any]]:
         if self.game is None and not self._human_accounts():
             return []
-        return self.db.stats_for_accounts(self._effective_accounts())
+        rows = self.db.stats_for_accounts(self._effective_accounts())
+        for row in rows:
+            account = str(row.get("account") or "")
+            room = self.room_luck.get(account) or {}
+            count = int(room.get("luck_score_count") or 0)
+            for period in ("all", "today"):
+                period_stats = row.get(period)
+                if isinstance(period_stats, dict):
+                    period_stats.pop("luck_score", None)
+                    period_stats.pop("luck_hands", None)
+            row["room"] = {
+                "luck_score": round(float(room.get("luck_score_total") or 0) / count, 1) if count else None,
+                "luck_hands": count,
+            }
+        return rows
 

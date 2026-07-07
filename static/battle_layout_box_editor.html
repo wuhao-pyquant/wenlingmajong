@@ -1,0 +1,801 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>温岭麻将牌桌框线编辑器</title>
+    <style>
+      :root {
+        --board-w: 1500px;
+        --board-h: 690px;
+        --zoom: 0.72;
+        --panel-w: 390px;
+        color-scheme: dark;
+        font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: #f5f7ef;
+        background: #101815;
+      }
+      .shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) var(--panel-w);
+        gap: 18px;
+        padding: 18px;
+      }
+      .toolbar,
+      .panel {
+        border: 1px solid rgba(255, 235, 170, 0.18);
+        border-radius: 12px;
+        background: rgba(5, 18, 15, 0.88);
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 14px;
+        padding: 10px;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        border: 1px solid rgba(255, 235, 170, 0.22);
+        border-radius: 8px;
+        color: #f8f5de;
+        background: rgba(0, 0, 0, 0.24);
+        font: inherit;
+      }
+      button {
+        min-height: 34px;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: rgba(255, 211, 91, 0.7);
+        background: #b7771d;
+      }
+      input {
+        width: 84px;
+        min-height: 30px;
+        padding: 4px 6px;
+      }
+      select {
+        width: 100%;
+        min-height: 32px;
+        padding: 4px 6px;
+      }
+      input[type="checkbox"] {
+        width: auto;
+        min-height: 0;
+      }
+      textarea {
+        width: 100%;
+        min-height: 220px;
+        padding: 8px;
+        resize: vertical;
+        font-family: Consolas, ui-monospace, monospace;
+        font-size: 12px;
+      }
+      .status {
+        color: #ffe59a;
+        font-size: 13px;
+      }
+      .board-outer {
+        overflow: auto;
+        max-width: 100%;
+        max-height: calc(100vh - 100px);
+        padding: 18px;
+        border-radius: 16px;
+        background: #07110f;
+      }
+      .board-wrap {
+        width: calc(var(--board-w) * var(--zoom));
+        height: calc(var(--board-h) * var(--zoom));
+      }
+      .board {
+        position: relative;
+        width: var(--board-w);
+        height: var(--board-h);
+        background:
+          linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(rgba(255,255,255,.11) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.11) 1px, transparent 1px),
+          #0b6b43;
+        background-size: 25px 25px, 25px 25px, 100px 100px, 100px 100px, auto;
+        box-shadow: 0 0 0 10px rgba(84, 43, 20, .8), 0 18px 40px rgba(0,0,0,.42);
+        transform: scale(var(--zoom));
+        transform-origin: 0 0;
+      }
+      .board::before {
+        content: "1500 脳 690 璁捐鍧愭爣";
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        z-index: 2;
+        padding: 4px 8px;
+        border-radius: 7px;
+        background: rgba(0,0,0,.25);
+        font-size: 18px;
+        pointer-events: none;
+      }
+      .board::after {
+        content: "";
+        position: absolute;
+        left: 750px;
+        top: 0;
+        bottom: 0;
+        z-index: 1;
+        border-left: 1px dashed rgba(255, 244, 170, 0.42);
+        pointer-events: none;
+      }
+      .center-axis-h {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 345px;
+        z-index: 1;
+        border-top: 1px dashed rgba(255, 244, 170, 0.42);
+        pointer-events: none;
+      }
+      .guide-line {
+        position: absolute;
+        z-index: 80;
+        pointer-events: none;
+        opacity: 0.92;
+      }
+      .guide-line.vertical {
+        top: 0;
+        bottom: 0;
+        border-left: 3px solid #ffea73;
+        box-shadow: 0 0 10px rgba(255, 234, 115, 0.72);
+      }
+      .guide-line.horizontal {
+        left: 0;
+        right: 0;
+        border-top: 3px solid #ffea73;
+        box-shadow: 0 0 10px rgba(255, 234, 115, 0.72);
+      }
+      .box {
+        position: absolute;
+        border: 2px solid var(--box-color, #ffd769);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--box-color, #ffd769) 16%, transparent);
+        box-shadow: 0 0 0 1px rgba(0,0,0,.36), inset 0 0 16px rgba(0,0,0,.18);
+        cursor: move;
+        user-select: none;
+      }
+      .box.selected {
+        border-width: 3px;
+        box-shadow: 0 0 0 3px rgba(255,255,255,.25), 0 0 24px var(--box-color, #ffd769);
+      }
+      .box-label {
+        position: absolute;
+        left: 4px;
+        top: 4px;
+        max-width: calc(100% - 10px);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: rgba(0,0,0,.48);
+        font-size: 14px;
+        pointer-events: none;
+      }
+      .box-layout-badge {
+        position: absolute;
+        right: 18px;
+        bottom: 4px;
+        max-width: calc(100% - 10px);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: rgba(0,0,0,.42);
+        color: #fff0a8;
+        font-size: 12px;
+        pointer-events: none;
+      }
+      .resize {
+        position: absolute;
+        right: -7px;
+        bottom: -7px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #fff3b1;
+        border: 2px solid #2c1800;
+        cursor: nwse-resize;
+      }
+      .side {
+        display: grid;
+        gap: 12px;
+      }
+      .panel {
+        padding: 12px;
+      }
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .layout-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .align-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .align-grid button {
+        min-height: 30px;
+        padding: 0 6px;
+        font-size: 13px;
+      }
+      .box-list {
+        display: grid;
+        max-height: 280px;
+        overflow: auto;
+        gap: 6px;
+      }
+      .box-list button {
+        text-align: left;
+      }
+      .hint {
+        color: rgba(245, 247, 239, 0.72);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <main>
+        <div class="toolbar">
+          <strong>牌桌框线编辑器</strong>
+          <button id="capacityPresetBtn" class="primary" type="button">容量设计</button>
+          <button id="currentStateBtn" type="button">读取当前房间状态</button>
+          <button id="resetBtn" type="button">重置当前预设</button>
+          <button id="copyBtn" type="button">复制 JSON</button>
+          <label>缩放 <input id="zoomInput" type="number" min="0.35" max="1.4" step="0.05" value="0.72" /></label>
+          <label>网格吸附 <input id="snapInput" type="number" min="1" max="50" step="1" value="5" /></label>
+          <label>中心/边框吸附 <input id="smartSnapInput" type="number" min="0" max="80" step="1" value="8" /></label>
+          <label><input id="smartSnapEnabled" type="checkbox" checked /> 开启吸附</label>
+          <span id="status" class="status"></span>
+        </div>
+        <div class="board-outer">
+          <div class="board-wrap">
+            <div id="board" class="board" aria-label="1500 × 690 牌桌布局编辑器">
+              <div class="center-axis-h"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="side">
+        <section class="panel">
+          <h2>选中元素</h2>
+          <div id="selectedTitle" class="hint">未选中</div>
+          <div class="form-grid" style="margin-top:10px;">
+            <label>X <input id="xInput" type="number" step="1" /></label>
+            <label>Y <input id="yInput" type="number" step="1" /></label>
+            <label>W <input id="wInput" type="number" step="1" /></label>
+            <label>H <input id="hInput" type="number" step="1" /></label>
+          </div>
+          <div class="layout-grid" aria-label="元素框内部排列方式">
+            <label>框内对齐
+              <select id="innerAlignInput">
+                <option value="start">靠起点</option>
+                <option value="center">居中</option>
+                <option value="end">靠终点</option>
+              </select>
+            </label>
+            <label>排列方向
+              <select id="innerFlowInput">
+                <option value="forward">起点 → 终点</option>
+                <option value="reverse">终点 → 起点</option>
+              </select>
+            </label>
+          </div>
+          <div class="align-grid" aria-label="对齐到画布中心和边框">
+            <button type="button" data-align="left">左边</button>
+            <button type="button" data-align="hcenter">水平居中</button>
+            <button type="button" data-align="right">右边</button>
+            <button type="button" data-align="top">上边</button>
+            <button type="button" data-align="vcenter">垂直居中</button>
+            <button type="button" data-align="bottom">下边</button>
+            <button type="button" data-align="center">画布中心</button>
+            <button type="button" data-align="fit-width">贴左右边</button>
+            <button type="button" data-align="fit-height">贴上下边</button>
+          </div>
+          <p class="hint">拖动/缩放时会吸附到画布边框、水平/垂直中心线；按钮用于把当前选中框精确对齐到中心或边框。</p>
+        </section>
+        <section class="panel">
+          <h2>元素列表</h2>
+          <div id="boxList" class="box-list"></div>
+        </section>
+        <section class="panel">
+          <h2>导出</h2>
+          <textarea id="jsonOutput" spellcheck="false"></textarea>
+          <p class="hint">调整后复制 JSON 发给 Codex；如果就在内置浏览器里调整，也可以告诉我“调好了”。</p>
+        </section>
+      </aside>
+    </div>
+
+    <script src="/battle_table_model.js?v=20260702-layout-capacity-1"></script>
+    <script>
+      const BOARD_W = 1500;
+      const BOARD_H = 690;
+      const BOARD_CX = BOARD_W / 2;
+      const BOARD_CY = BOARD_H / 2;
+      const SEAT_NAMES = ["自己", "右家", "上家", "左家"];
+      const COLORS = {
+        field: "#69e6a0",
+        center: "#ffd769",
+        centerLabel: "#fff1a8",
+        hand: "#9ac2ff",
+        river: "#ff9d7d",
+        public: "#d38bff",
+        flowers: "#f3a4ff",
+        melds: "#c9a2ff",
+      };
+      const TYPE_ORDER = {
+        field: 1,
+        center: 2,
+        centerLabel: 3,
+        hand: 4,
+        river: 5,
+        public: 6,
+        flowers: 7,
+        melds: 8,
+      };
+
+      let boxes = [];
+      let selectedId = "";
+      let preset = "capacity";
+      let drag = null;
+      let activeGuides = [];
+
+      const board = document.getElementById("board");
+      const boxList = document.getElementById("boxList");
+      const statusEl = document.getElementById("status");
+      const jsonOutput = document.getElementById("jsonOutput");
+      const zoomInput = document.getElementById("zoomInput");
+      const snapInput = document.getElementById("snapInput");
+      const smartSnapInput = document.getElementById("smartSnapInput");
+      const smartSnapEnabled = document.getElementById("smartSnapEnabled");
+      const selectedTitle = document.getElementById("selectedTitle");
+      const inputs = {
+        x: document.getElementById("xInput"),
+        y: document.getElementById("yInput"),
+        w: document.getElementById("wInput"),
+        h: document.getElementById("hInput"),
+      };
+      const innerAlignInput = document.getElementById("innerAlignInput");
+      const innerFlowInput = document.getElementById("innerFlowInput");
+      const INNER_ALIGN_LABELS = { start: "起点", center: "居中", end: "终点" };
+      const INNER_FLOW_LABELS = { forward: "顺排", reverse: "反排" };
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+        if (text) window.setTimeout(() => {
+          if (statusEl.textContent === text) statusEl.textContent = "";
+        }, 2400);
+      }
+
+      function round(value) {
+        return Math.round(Number(value) || 0);
+      }
+
+      function snapGrid(value) {
+        const step = Math.max(1, Number(snapInput.value) || 1);
+        return Math.round(value / step) * step;
+      }
+
+      function smartTolerance() {
+        return smartSnapEnabled.checked ? Math.max(0, Number(smartSnapInput.value) || 0) : 0;
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function blockLabel(block) {
+        const seat = Number.isInteger(Number(block.seat)) ? SEAT_NAMES[Number(block.seat)] : "";
+        if (block.type === "field") return "牌桌安全区";
+        if (block.type === "center") return "中心框";
+        if (block.type === "centerLabel") return `中心玩家信息-${seat}`;
+        if (block.type === "hand") return `手牌-${seat}${block.mode ? `/${block.mode}` : ""}`;
+        if (block.type === "river") return `舍牌-${seat}${block.mode ? `/${block.mode}` : ""}`;
+        if (block.type === "public") return `公开区-${seat}${block.mode ? `/${block.mode}` : ""}`;
+        if (block.type === "flowers") return `花牌-${seat}`;
+        if (block.type === "melds") return `副露-${seat}-${block.row || "main"}`;
+        return `${block.type}${seat ? `-${seat}` : ""}`;
+      }
+
+      function boxId(block, index) {
+        const seat = block.seat === null || block.seat === undefined ? "x" : block.seat;
+        const row = block.row || block.position || block.mode || "main";
+        return `${block.type}:${seat}:${row}:${index}`;
+      }
+
+      function normalizeBBox(block) {
+        const source = block.bbox || block.canonicalBBox;
+        return {
+          x: round(source?.x),
+          y: round(source?.y),
+          w: Math.max(1, round(source?.w)),
+          h: Math.max(1, round(source?.h)),
+        };
+      }
+
+      function defaultInnerAlign(type) {
+        return type === "hand" ? "center" : "start";
+      }
+
+      function normalizeInnerAlign(value, type) {
+        const normalized = String(value || "").trim().toLowerCase();
+        return ["start", "center", "end"].includes(normalized) ? normalized : defaultInnerAlign(type);
+      }
+
+      function normalizeInnerFlow(value) {
+        return String(value || "").trim().toLowerCase() === "reverse" ? "reverse" : "forward";
+      }
+
+      function normalizeBoxLayout(box) {
+        if (!box) return null;
+        box.innerAlign = normalizeInnerAlign(box.innerAlign, box.type);
+        box.innerFlow = normalizeInnerFlow(box.innerFlow);
+        return box;
+      }
+
+      function boxLayoutSummary(box) {
+        normalizeBoxLayout(box);
+        return `${INNER_ALIGN_LABELS[box.innerAlign] || box.innerAlign}/${INNER_FLOW_LABELS[box.innerFlow] || box.innerFlow}`;
+      }
+
+      function modelToBoxes(state) {
+        const model = window.BattleTableModel.createBattleTableModel(state, {
+          viewport: { width: BOARD_W, height: BOARD_H },
+        });
+        return model.blocks
+          .filter((block) => block.bbox && block.type !== "frame" && block.type !== "activeHandSafeArea")
+          .sort((a, b) => (TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99))
+          .map((block, index) => ({
+            id: boxId(block, index),
+            type: block.type,
+            seat: block.seat,
+            row: block.row || block.position || block.mode || "",
+            label: blockLabel(block),
+            color: COLORS[block.type] || "#ffffff",
+            innerAlign: normalizeInnerAlign(block.layout?.innerAlign, block.type),
+            innerFlow: normalizeInnerFlow(block.layout?.innerFlow),
+            ...normalizeBBox(block),
+          }));
+      }
+
+      function capacityState() {
+        const makeMeld = (tile, from, type = "peng") => ({ type, tile, from, tiles: [tile, tile, tile] });
+        return {
+          phase: "turn",
+          dealer: 0,
+          current_player: 0,
+          de_indicator: "m1",
+          players: [0, 1, 2, 3].map((seat) => ({
+            seat,
+            hand_count: 17,
+            discards: Array.from({ length: 24 }, (_, i) => ["m1", "m2", "m3", "t1", "t2", "b1"][i % 6]),
+            flowers: Array.from({ length: 12 }, (_, i) => `f${(i % 8) + 1}`),
+            flower_count: 12,
+            melds: [
+              makeMeld("m1", (seat + 1) % 4),
+              makeMeld("m2", (seat + 2) % 4),
+              makeMeld("t3", (seat + 3) % 4, "ming_gang"),
+              makeMeld("b5", (seat + 1) % 4),
+              makeMeld("fa", (seat + 2) % 4),
+            ],
+          })),
+        };
+      }
+
+      async function currentState() {
+        const token = localStorage.getItem("wenling.battle.token.v1") || "";
+        const response = await fetch("/api/battle/state", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      }
+
+      function selectedBox() {
+        return boxes.find((box) => box.id === selectedId) || null;
+      }
+
+      function updateForm() {
+        const box = selectedBox();
+        selectedTitle.textContent = box ? box.label : "未选中";
+        for (const key of ["x", "y", "w", "h"]) {
+          inputs[key].value = box ? round(box[key]) : "";
+        }
+        innerAlignInput.disabled = !box;
+        innerFlowInput.disabled = !box;
+        innerAlignInput.value = box ? normalizeInnerAlign(box.innerAlign, box.type) : "start";
+        innerFlowInput.value = box ? normalizeInnerFlow(box.innerFlow) : "forward";
+      }
+
+      function updateJson() {
+        jsonOutput.value = JSON.stringify({ preset, boxes }, null, 2);
+      }
+
+      function renderGuides() {
+        for (const guide of activeGuides) {
+          const el = document.createElement("div");
+          el.className = `guide-line ${guide.axis === "x" ? "vertical" : "horizontal"}`;
+          if (guide.axis === "x") el.style.left = `${guide.value}px`;
+          else el.style.top = `${guide.value}px`;
+          board.appendChild(el);
+        }
+      }
+
+      function render() {
+        board.querySelectorAll(".box,.guide-line").forEach((node) => node.remove());
+        for (const box of boxes) {
+          normalizeBoxLayout(box);
+          const el = document.createElement("div");
+          el.className = `box${box.id === selectedId ? " selected" : ""}`;
+          el.dataset.id = box.id;
+          el.style.setProperty("--box-color", box.color || "#ffd769");
+          el.style.left = `${box.x}px`;
+          el.style.top = `${box.y}px`;
+          el.style.width = `${box.w}px`;
+          el.style.height = `${box.h}px`;
+          el.innerHTML = `<span class="box-label">${box.label}</span><span class="box-layout-badge">${boxLayoutSummary(box)}</span><span class="resize"></span>`;
+          el.addEventListener("pointerdown", (event) => startDrag(event, box, false));
+          el.querySelector(".resize").addEventListener("pointerdown", (event) => startDrag(event, box, true));
+          board.appendChild(el);
+        }
+        renderGuides();
+        boxList.innerHTML = boxes.map((box) => `
+          <button type="button" data-id="${box.id}" ${box.id === selectedId ? 'class="primary"' : ""}>
+            ${box.label} (${round(box.x)}, ${round(box.y)}, ${round(box.w)}脳${round(box.h)})
+          </button>
+        `).join("");
+        boxList.querySelectorAll("button").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedId = button.dataset.id;
+            activeGuides = [];
+            render();
+          });
+        });
+        updateForm();
+        updateJson();
+      }
+
+      function bestSnap(candidates, tolerance) {
+        if (!tolerance) return null;
+        return candidates
+          .map((item) => ({ ...item, distance: Math.abs(item.delta) }))
+          .filter((item) => item.distance <= tolerance)
+          .sort((a, b) => a.distance - b.distance)[0] || null;
+      }
+
+      function snapMoveBox(raw) {
+        const tolerance = smartTolerance();
+        let x = clamp(snapGrid(raw.x), 0, BOARD_W - raw.w);
+        let y = clamp(snapGrid(raw.y), 0, BOARD_H - raw.h);
+        const guides = [];
+        const xSnap = bestSnap([
+          { delta: 0 - x, line: 0 },
+          { delta: BOARD_W - (x + raw.w), line: BOARD_W },
+          { delta: BOARD_CX - (x + raw.w / 2), line: BOARD_CX },
+          { delta: BOARD_CX - x, line: BOARD_CX },
+          { delta: BOARD_CX - (x + raw.w), line: BOARD_CX },
+        ], tolerance);
+        if (xSnap) {
+          x = clamp(x + xSnap.delta, 0, BOARD_W - raw.w);
+          guides.push({ axis: "x", value: xSnap.line });
+        }
+        const ySnap = bestSnap([
+          { delta: 0 - y, line: 0 },
+          { delta: BOARD_H - (y + raw.h), line: BOARD_H },
+          { delta: BOARD_CY - (y + raw.h / 2), line: BOARD_CY },
+          { delta: BOARD_CY - y, line: BOARD_CY },
+          { delta: BOARD_CY - (y + raw.h), line: BOARD_CY },
+        ], tolerance);
+        if (ySnap) {
+          y = clamp(y + ySnap.delta, 0, BOARD_H - raw.h);
+          guides.push({ axis: "y", value: ySnap.line });
+        }
+        return { x, y, w: raw.w, h: raw.h, guides };
+      }
+
+      function snapResizeBox(raw) {
+        const tolerance = smartTolerance();
+        let w = clamp(snapGrid(raw.w), 12, BOARD_W - raw.x);
+        let h = clamp(snapGrid(raw.h), 12, BOARD_H - raw.y);
+        const guides = [];
+        const xSnap = bestSnap([
+          { delta: BOARD_W - (raw.x + w), line: BOARD_W },
+          { delta: BOARD_CX - (raw.x + w), line: BOARD_CX },
+          { delta: (BOARD_CX - raw.x) * 2 - w, line: BOARD_CX },
+        ], tolerance);
+        if (xSnap) {
+          w = clamp(w + xSnap.delta, 12, BOARD_W - raw.x);
+          guides.push({ axis: "x", value: xSnap.line });
+        }
+        const ySnap = bestSnap([
+          { delta: BOARD_H - (raw.y + h), line: BOARD_H },
+          { delta: BOARD_CY - (raw.y + h), line: BOARD_CY },
+          { delta: (BOARD_CY - raw.y) * 2 - h, line: BOARD_CY },
+        ], tolerance);
+        if (ySnap) {
+          h = clamp(h + ySnap.delta, 12, BOARD_H - raw.y);
+          guides.push({ axis: "y", value: ySnap.line });
+        }
+        return { x: raw.x, y: raw.y, w, h, guides };
+      }
+
+      function startDrag(event, box, resize) {
+        event.stopPropagation();
+        selectedId = box.id;
+        const zoom = Number(zoomInput.value) || 0.72;
+        drag = {
+          id: box.id,
+          resize,
+          startX: event.clientX / zoom,
+          startY: event.clientY / zoom,
+          box: { ...box },
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        render();
+      }
+
+      function onPointerMove(event) {
+        if (!drag) return;
+        const zoom = Number(zoomInput.value) || 0.72;
+        const box = selectedBox();
+        if (!box) return;
+        const dx = event.clientX / zoom - drag.startX;
+        const dy = event.clientY / zoom - drag.startY;
+        const next = drag.resize
+          ? snapResizeBox({ ...drag.box, w: drag.box.w + dx, h: drag.box.h + dy })
+          : snapMoveBox({ ...drag.box, x: drag.box.x + dx, y: drag.box.y + dy });
+        Object.assign(box, next);
+        activeGuides = next.guides || [];
+        render();
+      }
+
+      function onPointerUp() {
+        drag = null;
+        activeGuides = [];
+        render();
+      }
+
+      function alignSelected(action) {
+        const box = selectedBox();
+        if (!box) return;
+        if (action === "left") box.x = 0;
+        if (action === "right") box.x = BOARD_W - box.w;
+        if (action === "hcenter") box.x = Math.round((BOARD_W - box.w) / 2);
+        if (action === "top") box.y = 0;
+        if (action === "bottom") box.y = BOARD_H - box.h;
+        if (action === "vcenter") box.y = Math.round((BOARD_H - box.h) / 2);
+        if (action === "center") {
+          box.x = Math.round((BOARD_W - box.w) / 2);
+          box.y = Math.round((BOARD_H - box.h) / 2);
+        }
+        if (action === "fit-width") {
+          box.x = 0;
+          box.w = BOARD_W;
+        }
+        if (action === "fit-height") {
+          box.y = 0;
+          box.h = BOARD_H;
+        }
+        box.x = clamp(round(box.x), 0, BOARD_W - box.w);
+        box.y = clamp(round(box.y), 0, BOARD_H - box.h);
+        box.w = clamp(round(box.w), 12, BOARD_W - box.x);
+        box.h = clamp(round(box.h), 12, BOARD_H - box.y);
+        activeGuides = [];
+        render();
+        setStatus("已对齐选中框");
+      }
+
+      async function loadCapacityPreset() {
+        preset = "capacity";
+        boxes = modelToBoxes(capacityState());
+        selectedId = boxes.find((box) => box.type === "center")?.id || boxes[0]?.id || "";
+        activeGuides = [];
+        render();
+        setStatus("已生成容量设计框");
+      }
+
+      async function loadCurrentPreset() {
+        try {
+          preset = "current-state";
+          boxes = modelToBoxes(await currentState());
+          selectedId = boxes.find((box) => box.type === "center")?.id || boxes[0]?.id || "";
+          activeGuides = [];
+          render();
+          setStatus("已读取当前房间状态");
+        } catch (error) {
+          setStatus(`读取失败：${error.message}`);
+        }
+      }
+
+      for (const key of ["x", "y", "w", "h"]) {
+        inputs[key].addEventListener("input", () => {
+          const box = selectedBox();
+          if (!box) return;
+          const value = Number(inputs[key].value);
+          if (!Number.isFinite(value)) return;
+          if (key === "x") box.x = clamp(value, 0, BOARD_W - box.w);
+          if (key === "y") box.y = clamp(value, 0, BOARD_H - box.h);
+          if (key === "w") box.w = clamp(value, 12, BOARD_W - box.x);
+          if (key === "h") box.h = clamp(value, 12, BOARD_H - box.y);
+          activeGuides = [];
+          render();
+        });
+      }
+
+      innerAlignInput.addEventListener("change", () => {
+        const box = selectedBox();
+        if (!box) return;
+        box.innerAlign = normalizeInnerAlign(innerAlignInput.value, box.type);
+        render();
+      });
+
+      innerFlowInput.addEventListener("change", () => {
+        const box = selectedBox();
+        if (!box) return;
+        box.innerFlow = normalizeInnerFlow(innerFlowInput.value);
+        render();
+      });
+
+      document.getElementById("capacityPresetBtn").addEventListener("click", loadCapacityPreset);
+      document.getElementById("currentStateBtn").addEventListener("click", loadCurrentPreset);
+      document.getElementById("resetBtn").addEventListener("click", () => {
+        if (preset === "current-state") loadCurrentPreset();
+        else loadCapacityPreset();
+      });
+      document.getElementById("copyBtn").addEventListener("click", async () => {
+        updateJson();
+        await navigator.clipboard.writeText(jsonOutput.value);
+        setStatus("JSON 已复制");
+      });
+      document.querySelectorAll("[data-align]").forEach((button) => {
+        button.addEventListener("click", () => alignSelected(button.dataset.align));
+      });
+      zoomInput.addEventListener("input", () => {
+        const zoom = clamp(Number(zoomInput.value) || 0.72, 0.35, 1.4);
+        document.documentElement.style.setProperty("--zoom", String(zoom));
+      });
+      board.addEventListener("pointermove", onPointerMove);
+      board.addEventListener("pointerup", onPointerUp);
+      board.addEventListener("pointercancel", onPointerUp);
+      board.addEventListener("pointerleave", onPointerUp);
+
+      if (!window.BattleTableModel) {
+        setStatus("battle_table_model.js 未加载，无法生成模型框");
+      } else {
+        loadCapacityPreset();
+      }
+    </script>
+  </body>
+</html>

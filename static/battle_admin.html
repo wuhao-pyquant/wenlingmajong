@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>温岭麻将 管理后台</title>
+    <link rel="stylesheet" href="/styles.css?v=20260707-online-admin-1" />
+  </head>
+  <body class="standalone-page">
+    <main class="standalone-shell online-admin-shell">
+      <header class="standalone-head">
+        <div>
+          <h1>管理后台</h1>
+          <p id="adminAccountLabel">未登录</p>
+        </div>
+        <div class="standalone-links">
+          <a href="/battle-login">返回大厅</a>
+        </div>
+      </header>
+
+      <section class="standalone-card admin-panel">
+        <div class="lobby-toolbar">
+          <h2>邀请码</h2>
+          <button id="adminRefreshBtn" type="button">刷新</button>
+        </div>
+        <div class="battle-login-row admin-create-row">
+          <input id="inviteCodeAdminInput" class="wide-input invite-code-input" maxlength="6" placeholder="留空自动生成" />
+          <input id="inviteMaxUsesInput" class="wide-input" type="number" min="1" placeholder="次数" />
+          <button id="generateInviteBtn" class="gold" type="button">生成邀请码</button>
+        </div>
+        <div id="inviteCodeList" class="admin-grid"></div>
+      </section>
+
+      <section class="standalone-card admin-panel">
+        <h2>房间监控</h2>
+        <div id="adminRoomList" class="admin-grid"></div>
+      </section>
+
+      <section class="standalone-card admin-panel">
+        <h2>账号</h2>
+        <div id="accountList" class="admin-grid"></div>
+      </section>
+
+      <section class="standalone-card admin-panel">
+        <h2>在线状态</h2>
+        <div id="presenceList" class="admin-grid"></div>
+      </section>
+
+      <div id="adminMessage" class="lobby-message" aria-live="polite"></div>
+    </main>
+    <script src="/battle_admin.js?v=20260707-online-admin-1"></script>
+  </body>
+</html>

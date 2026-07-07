@@ -60,6 +60,7 @@ function renderStat(stat) {
     <td>${num(stat.avg_fan_flower_draws)}</td>
     <td>${pct(stat.normal_win_rate)}</td>
     <td>${pct(stat.leizi_win_rate)}</td>
+    <td>${num(stat.luck_score)}</td>
   `;
 }
 
@@ -96,9 +97,10 @@ async function loadAccounts() {
           <th>加番花</th>
           <th>普通胡率</th>
           <th>劣子胡率</th>
+          <th>平均运气度</th>
         </tr>
       </thead>
-      <tbody>${rows || '<tr><td colspan="8">暂无账号</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="9">暂无账号</td></tr>'}</tbody>
     </table>
   `;
 }

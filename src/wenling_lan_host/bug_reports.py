@@ -31,9 +31,16 @@ def json_safe(value: Any) -> Any:
 
 
 class BugReportStore:
-    def __init__(self, root: str | Path, persist_interval_sec: float = 5.0):
+    def __init__(
+        self,
+        root: str | Path,
+        persist_interval_sec: float = 5.0,
+        export_root: str | Path | None = None,
+    ):
         self.root = Path(root)
         self.latest_path = self.root / "latest_round.json.gz"
+        self.export_root = Path(export_root) if export_root else None
+        self.export_latest_path = self.export_root / "latest_round.json.gz" if self.export_root else None
         self._lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._latest_json: str | None = None
@@ -64,6 +71,8 @@ class BugReportStore:
             )
         if should_persist:
             self._write_gzip_text(self.latest_path, encoded)
+            if self.export_latest_path is not None:
+                self._write_gzip_text(self.export_latest_path, encoded)
             with self._lock:
                 self._last_persisted_at = time.monotonic()
 
@@ -93,10 +102,16 @@ class BugReportStore:
         file_name = f"bug-{report_id}.json.gz"
         path = self.root / file_name
         self._write_gzip_json(path, payload)
+        export_path: Path | None = None
+        if self.export_root is not None:
+            export_path = self.export_root / file_name
+            self._write_gzip_json(export_path, payload)
         result = {
             "ok": True,
             "report_id": report_id,
             "file_name": file_name,
+            "file_path": str(path),
+            "export_path": str(export_path) if export_path is not None else None,
             "reported_at": reported_at,
             "round_no": payload["cached_round"].get("game", {}).get("round_no"),
             "captured_at": payload["cached_round"].get("captured_at"),
@@ -110,6 +125,8 @@ class BugReportStore:
             return {
                 **({"available": False} if not self._latest_json else dict(self._latest_summary)),
                 "last_report": dict(self._last_report) if self._last_report else None,
+                "latest_path": str(self.latest_path),
+                "export_latest_path": str(self.export_latest_path) if self.export_latest_path else None,
             }
 
     def flush(self) -> None:

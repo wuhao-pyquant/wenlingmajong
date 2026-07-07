@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 from wenling_lan_host.battle_db import BattleDatabase
-from wenling_lan_host.battle_app import BattleSession
+from wenling_lan_host.battle_app import BattleSession, LowLatencyPolicyModel
 
 
 class FakeBattleDb:
@@ -64,6 +64,8 @@ class FakeGame:
         }
         self.applied_actions = []
         self.history = [{"event": "discard", "seat": 1, "tile": "m1"}]
+        self.bao_liabilities_payload = []
+        self.temporary_bao_payload = None
 
     def serialize(self, viewer_seat=None):
         active_human_seat = self.human_seat if viewer_seat is None else viewer_seat
@@ -100,6 +102,8 @@ class FakeGame:
             "players": players,
             "legal_actions": [{"type": "discard", "tile": "m1"}] if active_human_seat == 3 else [],
             "history": list(self.history),
+            "bao_liabilities": list(self.bao_liabilities_payload),
+            "temporary_bao": dict(self.temporary_bao_payload) if self.temporary_bao_payload else None,
             "winner": None,
             "win_type": "",
             "settlement": None,
@@ -178,6 +182,74 @@ def assert_json_contains_only_allowed_secrets(testcase, payload, allowed: set[st
 
 
 class BattleMultiplayerViewTests(unittest.TestCase):
+    def test_low_ai_policy_discards_last_draw_and_legacy_tile_efficiency_maps_to_high(self):
+        policy = LowLatencyPolicyModel()
+        action = policy.choose_action(
+            {"hand": {"m1": 1, "m9": 1}, "last_draw": "m9", "public": {}},
+            [{"type": "discard", "tile": "m1"}, {"type": "discard", "tile": "m9"}],
+        )
+
+        self.assertEqual(action, {"type": "discard", "tile": "m9"})
+
+        session = fake_session()
+        session.set_ai_policy("tile_efficiency")
+        self.assertEqual(session.ai_policy, "high")
+
+    def test_default_low_ready_from_joining_player_does_not_downgrade_high_ai_policy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = real_session(temp_dir)
+            session.set_ai_policy("high")
+            for account, seat in [("alice", 0), ("bob", 1), ("carol", 2)]:
+                session.register(account)
+                session.sit(account, seat)
+
+            session.ready_account("alice", "high")
+            session.ready_account("bob", "low")
+            payload = session.ready_account("carol", "low")
+
+            self.assertEqual(session.ai_policy, "high")
+            self.assertEqual(payload["runtime"]["ai_policy"], "high")
+            self.assertIsNotNone(session.game)
+            assert session.game is not None
+            self.assertFalse(payload["runtime"]["low_latency_ai"])
+
+    def test_low_ai_policy_keeps_other_human_response_window_open(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = real_session(temp_dir)
+            for account, seat in [("alice", 0), ("bob", 1), ("carol", 2)]:
+                session.register(account)
+                session.sit(account, seat)
+
+            session.ready_account("alice", "low")
+            session.ready_account("bob", "low")
+            session.ready_account("carol", "low")
+            self.assertIsNotNone(session.game)
+            game = session.game
+            assert game is not None
+            self.assertTrue(game.defer_ai_responses)
+
+            game.de_indicator = "bai"
+            game.de_set = {"bai"}
+            game.flower_set = set()
+            game.phase = "turn"
+            game.current_player = 0
+            game.pending = None
+            game.wall = ["m9"] * 50
+            game.players[0].hand = Counter({"m3": 1})
+            game.players[1].hand = Counter({"m2": 2, "m4": 1})
+            game.players[2].hand = Counter({"m2": 2, "m5": 1})
+            game.players[3].hand = Counter({"t1": 1})
+
+            game._open_discard_response(0, "m2")
+
+            self.assertIsNotNone(game.pending)
+            self.assertEqual(game.pending["kind"], "response_poll")
+            self.assertEqual(game.pending["human_responders"], [1, 2])
+            bob = session.state("bob")
+            carol = session.state("carol")
+            self.assertTrue(any(action.get("type") == "peng" for action in bob["legal_actions"]))
+            self.assertTrue(any(action.get("type") == "peng" for action in carol["legal_actions"]))
+
     def test_three_human_one_ai_real_session_starts_private_rotated_game(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             session = real_session(temp_dir)
@@ -243,6 +315,9 @@ class BattleMultiplayerViewTests(unittest.TestCase):
             game.de_set = {"bai"}
             game.flower_set = set()
             game.phase = "turn"
+            game.winner = None
+            game.win_type = ""
+            game.settlement = None
             game.pending = None
             game.current_player = 1
             game.wall = ["m9"] * 50
@@ -404,6 +479,57 @@ class BattleMultiplayerViewTests(unittest.TestCase):
         self.assertEqual(via_state["players"][2]["hand"], via_exit["players"][2]["hand"])
         self.assertEqual(via_state["legal_actions"], via_exit["legal_actions"])
 
+    def test_bao_status_seats_rotate_with_viewer(self):
+        session = fake_session()
+        session.game.temporary_bao_payload = {
+            "seat": 1,
+            "reason": "temporary",
+            "source_event_id": "d1",
+        }
+        session.game.bao_liabilities_payload = [
+            {
+                "seq": 1,
+                "liable_seat": 3,
+                "target_winner": 1,
+                "reason": "permanent",
+                "source_event_id": "d2",
+                "active": True,
+            }
+        ]
+
+        bob = session.state("bob")
+
+        self.assertEqual(bob["viewer_absolute_seat"], 3)
+        self.assertEqual(bob["temporary_bao"]["seat"], 2)
+        self.assertEqual(bob["temporary_bao"]["absolute_seat"], 1)
+        self.assertEqual(bob["bao_liabilities"][0]["liable_seat"], 0)
+        self.assertEqual(bob["bao_liabilities"][0]["absolute_liable_seat"], 3)
+        self.assertEqual(bob["bao_liabilities"][0]["target_winner"], 2)
+        self.assertEqual(bob["bao_liabilities"][0]["absolute_target_winner"], 1)
+
+    def test_room_round_count_survives_reseat_reset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = real_session(temp_dir)
+            session.register("alice")
+            session.sit("alice", 0)
+
+            first = session.ready_account("alice")
+            self.assertEqual(first["room_round_count"], 1)
+            self.assertIsNotNone(session.game)
+            session.game.phase = "round_over"
+
+            second = session.ready_account("alice")
+            self.assertEqual(second["room_round_count"], 2)
+            session.game.phase = "round_over"
+
+            reset = session.reset_match("alice")
+            self.assertFalse(reset["game_started"])
+            self.assertEqual(reset["room_round_count"], 2)
+
+            session.sit("alice", 0, room_generation=reset["room_generation"])
+            third = session.ready_account("alice")
+            self.assertEqual(third["room_round_count"], 3)
+
     def test_response_waiting_snapshots_do_not_leak_candidate_private_hands(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             session = real_session(temp_dir)
@@ -532,9 +658,13 @@ class BattleMultiplayerViewTests(unittest.TestCase):
             session = real_session(temp_dir)
             session.register("alice")
             session.sit("alice", 0)
+            session.db.record_opening("alice", opening_shanten=3, de_draws=1, fan_flower_draws=2)
+            session.db.record_win("alice", "劣子和", win_turn=7, win_points=120)
+            session.db.record_hand_luck("alice", 88.5)
             session.ready_account("alice")
             self.assertIsNotNone(session.game)
             assert session.game is not None
+            stats_before = session.db.stats_for_accounts(["alice"])[0]["all"]
             for player, chips in zip(session.game.players, [54, -10, 3, -47]):
                 player.chips = chips
             expected = {player.name: player.chips for player in session.game.players}
@@ -543,12 +673,19 @@ class BattleMultiplayerViewTests(unittest.TestCase):
             session.reset_match("alice")
             self.assertIsNone(session.game)
             self.assertEqual(session.account_chips, expected)
+            self.assertEqual(session.db.stats_for_accounts(["alice"])[0]["all"], stats_before)
 
             session.ready_account("alice")
             self.assertIsNotNone(session.game)
             assert session.game is not None
             restored = {player.name: player.chips for player in session.game.players}
-            self.assertEqual(restored, expected)
+            settlement = session.game.settlement or {}
+            deltas = settlement.get("deltas") or [0, 0, 0, 0]
+            expected_after_round_start = {
+                player.name: expected[player.name] + int(deltas[seat])
+                for seat, player in enumerate(session.game.players)
+            }
+            self.assertEqual(restored, expected_after_round_start)
 
     def test_new_player_cannot_sit_during_active_round_but_same_account_can_reconnect(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1170,7 +1307,13 @@ class BattleMultiplayerViewTests(unittest.TestCase):
                 assert game is not None
                 with session.lock:
                     game.ai_decision_timeout_sec = 0.01
+                    game.de_indicator = "bai"
+                    game.de_set = {"bai"}
+                    game.flower_set = set()
                     game.phase = "turn"
+                    game.winner = None
+                    game.win_type = ""
+                    game.settlement = None
                     game.current_player = 1
                     game.wall = ["m9"] * 20
                     game.players[1].hand = Counter({"m1": 1, "m2": 1})

@@ -5,6 +5,7 @@ import tempfile
 import time
 import random
 from collections import Counter
+from unittest.mock import patch
 
 from wenling_core.game import WenlingMahjongGame
 from wenling_core.rules import _rounded_score_total, can_ming_gang, can_peng, can_win, score_player
@@ -31,6 +32,11 @@ class ClaimPolicy:
 class StaleIllegalDiscardPolicy:
     def choose_action(self, observation: dict, legal_actions: list[dict], explore: float = 0.0) -> dict:
         return {"type": "discard", "tile": "bai"}
+
+
+class NoShuffleRandom:
+    def shuffle(self, values: list[str]) -> None:
+        return None
 
 
 def observation(
@@ -145,6 +151,52 @@ class TileEfficiencyTests(unittest.TestCase):
         self.assertTrue(any(item.get("points") == 8 for item in score["base_items"]))
         self.assertTrue(any(item.get("fan") == 1 for item in score["fan_items"]))
 
+    def test_four_winds_huiqi_requires_wind_groups_not_singletons(self) -> None:
+        hand = Counter({"east": 1, "south": 1, "west": 1, "north": 1, "m1": 1})
+        score = score_player(hand, [], [], 0, {"bai"}, "bai", winner=False)
+
+        self.assertFalse(any(item.get("label") == "四风会齐" for item in score["fan_items"]))
+
+    def test_four_winds_huiqi_requires_self_wind_triplet(self) -> None:
+        hand = Counter({"east": 2, "south": 3, "west": 3, "north": 3, "m1": 1, "m2": 1, "m3": 1})
+        score = score_player(hand, [], [], 0, {"bai"}, "bai", winner=True, win_type="普通和牌")
+
+        self.assertFalse(any(item.get("label") == "四风会齐" for item in score["fan_items"]))
+
+    def test_four_winds_huiqi_accepts_three_triplets_plus_fourth_pair(self) -> None:
+        hand = Counter({"east": 3, "south": 3, "west": 3, "north": 2, "m1": 1, "m2": 1, "m3": 1})
+        score = score_player(hand, [], [], 0, {"bai"}, "bai", winner=True, win_type="普通和牌")
+
+        self.assertTrue(any(item.get("label") == "四风会齐" and item.get("fan") == 13 for item in score["fan_items"]))
+
+    def test_four_winds_huiqi_counts_exposed_wind_triplets(self) -> None:
+        hand = Counter({"east": 3, "south": 3, "north": 2, "m1": 1})
+        melds = [{"type": "peng", "tile": "west", "tiles": ["west", "west", "west"], "from": 1}]
+        score = score_player(hand, [], melds, 0, {"bai"}, "bai", winner=False)
+
+        self.assertTrue(any(item.get("label") == "四风会齐" and item.get("fan") == 13 for item in score["fan_items"]))
+
+    def test_tianhu_adds_five_fan(self) -> None:
+        hand = Counter({
+            "m1": 1,
+            "m2": 1,
+            "m3": 1,
+            "m4": 1,
+            "m5": 1,
+            "m6": 1,
+            "t1": 1,
+            "t2": 1,
+            "t3": 1,
+            "b1": 1,
+            "b2": 1,
+            "b3": 1,
+            "east": 3,
+            "fa": 2,
+        })
+        score = score_player(hand, [], [], 0, {"bai"}, "bai", winner=True, win_type="天胡")
+
+        self.assertTrue(any(item.get("label") == "天胡" and item.get("fan") == 5 for item in score["fan_items"]))
+
     def test_pure_de_pair_is_leizi_not_normal_scoring_restoration(self) -> None:
         from wenling_core.rules import leizi_win_reason
 
@@ -198,6 +250,43 @@ class TileEfficiencyTests(unittest.TestCase):
 
         self.assertIsNotNone(leizi_win_reason(hand, [], "bai", {"bai"}, 0))
         self.assertEqual(score["total"], 500)
+
+    def test_four_flowered_zhong_counts_as_leizi_but_self_wind_must_be_in_hand(self) -> None:
+        from wenling_core.rules import leizi_win_reason
+
+        self.assertIsNotNone(leizi_win_reason(Counter(), ["zhong"] * 4, "south", {"south"}, 0))
+        self.assertIsNotNone(leizi_win_reason(Counter({"east": 4}), [], "bai", {"bai"}, 0))
+        self.assertIsNone(leizi_win_reason(Counter({"east": 3}), ["east"], "bai", {"bai"}, 0))
+
+    def test_leizi_four_tile_sources_follow_de_flower_and_concealed_rules(self) -> None:
+        from wenling_core.rules import leizi_win_reason
+
+        self.assertIsNotNone(leizi_win_reason(Counter(), ["bai"] * 4, "m1", {"m1"}, 0))
+        self.assertIsNone(leizi_win_reason(Counter({"bai": 4}), [], "m1", {"m1"}, 0))
+        self.assertIsNotNone(leizi_win_reason(Counter({"bai": 3}), [], "bai", {"bai"}, 0))
+
+        self.assertIsNotNone(leizi_win_reason(Counter(), ["fa"] * 4, "zhong", {"zhong"}, 0))
+        self.assertIsNone(leizi_win_reason(Counter({"fa": 4}), [], "zhong", {"zhong"}, 0))
+        self.assertIsNotNone(leizi_win_reason(Counter({"zhong": 3}), [], "zhong", {"zhong"}, 0))
+
+        self.assertIsNotNone(leizi_win_reason(Counter({"zhong": 4}), [], "m1", {"m1"}, 0))
+        self.assertIsNone(leizi_win_reason(Counter({"zhong": 3, "m1": 1}), [], "m1", {"m1"}, 0))
+        self.assertIsNotNone(leizi_win_reason(Counter({"east": 4}), [], "m1", {"m1"}, 0))
+        self.assertIsNone(leizi_win_reason(Counter({"east": 3, "m1": 1}), [], "m1", {"m1"}, 0))
+
+    def test_extracted_four_zhong_flowers_finish_leizi(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            game = WenlingMahjongGame(PassPolicy(), temp_dir, human_seat=None)
+            game.de_indicator = "south"
+            game.de_set = {"south"}
+            game.flower_set = {"zhong"}
+            game.players[0].hand = Counter({"zhong": 4})
+
+            self.assertEqual(game._extract_current_flowers(0), ["zhong"] * 4)
+            self.assertTrue(game._finish_leizi_if_present(0))
+            self.assertEqual(game.phase, "round_over")
+            self.assertEqual(game.winner, 0)
+            self.assertEqual(game.win_type, "劣子和")
 
     def test_winning_concealed_triplet_can_use_de_for_points_and_fan(self) -> None:
         hand = Counter({"fa": 2, "bai": 1, "east": 2, "m1": 1, "m2": 1, "m3": 1, "m4": 1, "m5": 1, "m6": 1, "t1": 1, "t2": 1, "t3": 1})
@@ -882,6 +971,66 @@ class TileEfficiencyTests(unittest.TestCase):
             game._draw_game("test")
             game.new_round()
             self.assertEqual(game.dealer, 2)
+
+    def test_opening_east_wind_normal_win_is_tianhu(self) -> None:
+        dealer_hand = [
+            "m1", "m2", "m3",
+            "m4", "m5", "m6",
+            "t1", "t2", "t3",
+            "b1", "b2", "b3",
+            "east", "east", "east",
+            "fa", "fa",
+        ]
+        filler = ["m8"] * 16
+        wall = ["m9"] + filler + filler + dealer_hand + filler
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            game = WenlingMahjongGame(
+                PassPolicy(),  # type: ignore[arg-type]
+                temp_dir,
+                human_seat=0,
+                seat_models=[PassPolicy(), PassPolicy(), PassPolicy(), PassPolicy()],
+                persist_logs=False,
+            )
+            game.dealer = 2
+            game.random = NoShuffleRandom()  # type: ignore[assignment]
+            with patch("wenling_core.game.build_wall", return_value=list(wall)):
+                state = game.new_round()
+
+            self.assertEqual(state["phase"], "round_over")
+            self.assertEqual(state["winner"], 2)
+            self.assertEqual(state["win_type"], "天胡")
+            self.assertTrue(
+                any(item.get("label") == "天胡" and item.get("fan") == 5 for item in state["settlement"]["scores"][2]["fan_items"])
+            )
+
+    def test_opening_leizi_win_takes_priority_over_tianhu(self) -> None:
+        dealer_hand = [
+            "bai", "bai", "bai",
+            "m1", "m2", "m3",
+            "m4", "m5", "m6",
+            "t1", "t2", "t3",
+            "b1", "b2", "b3",
+            "fa", "fa",
+        ]
+        filler = ["m8"] * 16
+        wall = ["bai"] + dealer_hand + filler + filler + filler
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            game = WenlingMahjongGame(
+                PassPolicy(),  # type: ignore[arg-type]
+                temp_dir,
+                human_seat=0,
+                seat_models=[PassPolicy(), PassPolicy(), PassPolicy(), PassPolicy()],
+                persist_logs=False,
+            )
+            game.random = NoShuffleRandom()  # type: ignore[assignment]
+            with patch("wenling_core.game.build_wall", return_value=list(wall)):
+                state = game.new_round()
+
+            self.assertEqual(state["phase"], "round_over")
+            self.assertEqual(state["winner"], 0)
+            self.assertEqual(state["win_type"], "劣子和")
 
     def test_shuffle_seats_keeps_chips_bound_to_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

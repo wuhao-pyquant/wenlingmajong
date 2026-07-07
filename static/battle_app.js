@@ -22,30 +22,70 @@ let roomMenuOpen = false;
 let selectedDiscardTile = null;
 let selectedDiscardKey = null;
 let pendingActionFeedback = null;
+let transientActionNotice = "";
+let transientActionNoticeTimer = null;
 let recentBattleApiTimings = [];
 let recentBattleClientErrors = [];
 let voiceEnabled = true;
-let lastWinAnimationKey = null;
-let lastWinAnimationStartedAt = 0;
+let speechQueue = [];
+let speechActiveSince = 0;
+let speechPendingTimer = null;
 let currentBattleAccount = null;
+let battleRoomSummary = null;
+let battleRoomSummaryRefreshing = false;
+const seatActionEffects = new Map();
+const seatActionEffectTimers = new Map();
 
 const $ = (id) => document.getElementById(id);
 const APP_MODE = "battle";
-const LEIZI_WIN_GIF_SRC = "/assets/q_dazed_drool_5s.gif";
-const BATTLE_ACCOUNT_STORAGE_KEY = "wenling.battle.account.v1";
+const EXCEPTIONAL_LUCK_WIN_GIF_SRC = "/assets/q_dazed_drool_5s.gif";
+const BATTLE_ACCOUNT_STORAGE_KEY = "wenling.online.account.v1";
+const BATTLE_TOKEN_STORAGE_KEY = "wenling.online.token.v1";
+const BATTLE_ROLE_STORAGE_KEY = "wenling.online.role.v1";
+const BATTLE_ROOM_STORAGE_KEY = "wenling.online.room_id.v1";
+const BATTLE_ROOM_SUMMARY_STORAGE_KEY = "wenling.online.room_summary.v1";
+const BATTLE_AI_POLICY_STORAGE_KEY = "wenling.battle.ai_policy.v2";
 const DISCARD_ZONE_LAYOUT_STORAGE_KEY = "wenling.discard.zone.layout.v3";
-const DEFAULT_BATTLE_AI_POLICY = "tile_efficiency";
+const DEFAULT_BATTLE_AI_POLICY = "low";
+const BATTLE_AI_POLICY_OPTIONS = [
+  ["low", "\u4f4e\u7ea7"],
+  ["high", "\u9ad8\u7ea7"],
+];
+const SPEECH_MIN_AUDIBLE_MS = 300;
 const BATTLE_HEARTBEAT_INTERVAL_MS = 10000;
 const BATTLE_MOBILE_LOGICAL_WIDTH = 1500;
-const BATTLE_MOBILE_MIN_LOGICAL_HEIGHT = 760;
+const BATTLE_TABLE_BASE_HEIGHT = 780;
+const BATTLE_MOBILE_MIN_LOGICAL_HEIGHT = BATTLE_TABLE_BASE_HEIGHT;
+const BATTLE_RIVER_NORMAL_LIMIT = 12;
+const BATTLE_RIVER_DENSE_LIMIT = 15;
+const BATTLE_PUBLIC_MELD_ROW_LIMIT = 10.45;
+const BATTLE_PUBLIC_COMPACT_LIMIT = 20;
+const BATTLE_PUBLIC_OVERFLOW_LIMIT = 26;
+const BATTLE_TABLE_LAYOUT_MODE = "v7";
+const BATTLE_DOM_V7_REMOTE_TILE_SCALE = 1;
+const BATTLE_DOM_V7_PUBLIC_TILE_SCALE = 1;
+const BATTLE_DOM_V7_RIVER_TILE_SCALE = 1;
+const BATTLE_TABLE_RENDERER_MODE = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get("renderer") === "dom" ? "dom" : "canvas";
+  } catch {
+    return "canvas";
+  }
+})();
+const BATTLE_TABLE_TILE_RENDERER_MODE = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get("tiles") === "canvas" ? "canvas" : "dom";
+  } catch {
+    return "dom";
+  }
+})();
 const BATTLE_GENERATION_WRITE_PATHS = new Set([
-  "/api/battle/heartbeat",
-  "/api/battle/sit",
-  "/api/battle/leave",
-  "/api/battle/kick",
-  "/api/battle/ready",
-  "/api/battle/reset",
-  "/api/battle/report-bug",
+  "heartbeat",
+  "sit",
+  "leave",
+  "ready",
+  "reset",
+  "report-bug",
 ]);
 
 function percentValue(value) {
@@ -62,14 +102,50 @@ function percentText(value, digits = 1) {
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(digits)}%` : "-";
 }
+function normalizeBattleAiPolicy(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "tile_efficiency" || key === "normal" || key === "medium") return "high";
+  if (key === "low_latency" || key === "fast") return "low";
+  if (key === "unlimited") return "high";
+  return BATTLE_AI_POLICY_OPTIONS.some(([policy]) => policy === key) ? key : DEFAULT_BATTLE_AI_POLICY;
+}
+
+function battleAiPolicyOptionsHtml() {
+  return BATTLE_AI_POLICY_OPTIONS
+    .map(([value, label]) => `<option value="${value}">${label}</option>`)
+    .join("");
+}
+
 function battleAiPolicyValue() {
-  return DEFAULT_BATTLE_AI_POLICY;
+  const select = $("battleAiPolicySelect");
+  if (select) return normalizeBattleAiPolicy(select.value);
+  try {
+    return normalizeBattleAiPolicy(localStorage.getItem(BATTLE_AI_POLICY_STORAGE_KEY));
+  } catch {
+    return DEFAULT_BATTLE_AI_POLICY;
+  }
 }
 
 function saveBattleAiPolicy() {
+  const value = battleAiPolicyValue();
+  try {
+    localStorage.setItem(BATTLE_AI_POLICY_STORAGE_KEY, value);
+  } catch {
+    // Local storage can be unavailable in hardened browser profiles.
+  }
+  return value;
 }
 
 function restoreBattleAiPolicy() {
+  const select = $("battleAiPolicySelect");
+  if (!select) return;
+  let value = state?.ai_policy || DEFAULT_BATTLE_AI_POLICY;
+  try {
+    value = localStorage.getItem(BATTLE_AI_POLICY_STORAGE_KEY) || value;
+  } catch {
+    // Local storage can be unavailable in hardened browser profiles.
+  }
+  select.value = normalizeBattleAiPolicy(value);
 }
 
 function battleAccountValue() {
@@ -97,17 +173,151 @@ function restoreBattleAccount() {
   }
 }
 
-function battleQuery() {
-  const account = battleAccountValue();
-  return account ? `?account=${encodeURIComponent(account)}` : "";
+function battleTokenValue() {
+  try {
+    return localStorage.getItem(BATTLE_TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveBattleToken(token) {
+  try {
+    if (token) localStorage.setItem(BATTLE_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(BATTLE_TOKEN_STORAGE_KEY);
+  } catch {
+    // Local storage can be unavailable in hardened browser profiles.
+  }
+}
+
+function battleRoomIdValue() {
+  const fromUrl = new URLSearchParams(window.location.search).get("room_id");
+  if (fromUrl) {
+    try {
+      localStorage.setItem(BATTLE_ROOM_STORAGE_KEY, fromUrl);
+    } catch {
+      // Local storage can be unavailable in hardened browser profiles.
+    }
+    return fromUrl;
+  }
+  try {
+    return localStorage.getItem(BATTLE_ROOM_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeBattleRoomSummary(room) {
+  if (!room) return null;
+  return {
+    room_id: String(room.room_id || ""),
+    room_name: String(room.room_name || ""),
+    owner_account: String(room.owner_account || ""),
+    ai_policy: normalizeBattleAiPolicy(room.ai_policy || state?.ai_policy || DEFAULT_BATTLE_AI_POLICY),
+    status: String(room.status || room.room_status || state?.room_status || ""),
+    game_started: Boolean(room.game_started ?? state?.game_started),
+    room_generation: room.room_generation ?? state?.room_generation ?? null,
+    room_revision: room.room_revision ?? state?.room_revision ?? null,
+    seats: Array.isArray(room.seats) ? room.seats : [],
+  };
+}
+
+function saveBattleRoomSummary(room) {
+  const summary = normalizeBattleRoomSummary(room);
+  const roomId = battleRoomIdValue();
+  if (!summary?.room_id || (roomId && summary.room_id !== roomId)) return null;
+  battleRoomSummary = summary;
+  try {
+    localStorage.setItem(BATTLE_ROOM_SUMMARY_STORAGE_KEY, JSON.stringify(summary));
+  } catch {
+    // Local storage can be unavailable in hardened browser profiles.
+  }
+  return summary;
+}
+
+function loadBattleRoomSummary() {
+  const roomId = battleRoomIdValue();
+  try {
+    const raw = localStorage.getItem(BATTLE_ROOM_SUMMARY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || (roomId && parsed.room_id !== roomId)) return null;
+    battleRoomSummary = normalizeBattleRoomSummary(parsed);
+  } catch {
+    battleRoomSummary = null;
+  }
+  return battleRoomSummary;
+}
+
+function mergeBattleRoomSummaryFromState(nextState) {
+  if (!nextState) return;
+  const roomId = battleRoomIdValue();
+  const base = battleRoomSummary || loadBattleRoomSummary() || { room_id: roomId };
+  saveBattleRoomSummary({
+    ...base,
+    room_id: roomId,
+    ai_policy: nextState.ai_policy || base.ai_policy,
+    status: nextState.room_status || base.status,
+    game_started: nextState.game_started ?? base.game_started,
+    room_generation: nextState.room_generation ?? base.room_generation,
+    room_revision: nextState.room_revision ?? base.room_revision,
+    seats: Array.isArray(nextState.seats) ? nextState.seats : base.seats,
+  });
+}
+
+function battleRoomMetadata() {
+  const summary = battleRoomSummary || loadBattleRoomSummary() || {};
+  return {
+    ...summary,
+    room_id: battleRoomIdValue() || summary.room_id || "",
+    ai_policy: normalizeBattleAiPolicy(state?.ai_policy || summary.ai_policy || DEFAULT_BATTLE_AI_POLICY),
+    status: state?.room_status || summary.status || "",
+    game_started: state?.game_started ?? Boolean(summary.game_started),
+    room_generation: state?.room_generation ?? summary.room_generation ?? null,
+    room_revision: state?.room_revision ?? summary.room_revision ?? null,
+    seats: Array.isArray(state?.seats) ? state.seats : (Array.isArray(summary.seats) ? summary.seats : []),
+  };
+}
+
+async function refreshBattleRoomSummary() {
+  if (APP_MODE !== "battle" || battleRoomSummaryRefreshing || !battleTokenValue()) return battleRoomMetadata();
+  const roomId = battleRoomIdValue();
+  if (!roomId) return battleRoomMetadata();
+  battleRoomSummaryRefreshing = true;
+  try {
+    const payload = await api("/api/lobby/rooms");
+    const room = (payload.rooms || []).find((item) => String(item.room_id) === String(roomId));
+    if (room) saveBattleRoomSummary(room);
+    return battleRoomMetadata();
+  } finally {
+    battleRoomSummaryRefreshing = false;
+  }
+}
+
+function redirectToBattleLobby(message) {
+  const notice = message ? `?notice=${encodeURIComponent(message)}` : "";
+  window.location.href = `/battle-login${notice}`;
+}
+
+function battleApiPath(action) {
+  const roomId = battleRoomIdValue();
+  if (!roomId) {
+    redirectToBattleLobby("缺少房间 ID，请从大厅进入房间。");
+    throw new Error("缺少房间 ID");
+  }
+  return `/api/battle/${encodeURIComponent(roomId)}/${action}`;
+}
+
+function battleActionFromPath(path) {
+  const clean = String(path || "").split("?")[0];
+  const parts = clean.split("/").filter(Boolean);
+  return parts[0] === "api" && parts[1] === "battle" && parts.length >= 4 ? parts[3] : "";
 }
 
 function battleWaitQuery(since) {
   const params = new URLSearchParams();
-  const account = battleAccountValue();
-  if (account) params.set("account", account);
   if (since !== null && since !== undefined) params.set("since", String(since));
-  params.set("timeout", "20");
+  params.set("timeout", "12");
   return `?${params.toString()}`;
 }
 
@@ -116,7 +326,7 @@ async function battleApi(path, options = {}) {
 }
 async function post(path, payload = {}) {
   let body = { ...(payload || {}) };
-  if (BATTLE_GENERATION_WRITE_PATHS.has(path) && body.room_generation === undefined) {
+  if (BATTLE_GENERATION_WRITE_PATHS.has(battleActionFromPath(path)) && body.room_generation === undefined) {
     const generation = Number(state?.room_generation);
     if (!Number.isInteger(generation)) {
       throw new Error("房间状态尚未加载，请刷新后重试。");
@@ -140,18 +350,34 @@ async function api(path, options = {}) {
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   let status = 0;
   let ok = false;
-  const request = { ...options };
+  const request = { cache: "no-store", ...options };
   const headers = new Headers(options.headers || {});
   if (request.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+  const sessionToken = battleTokenValue();
+  if (sessionToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${sessionToken}`);
   }
   request.headers = headers;
   try {
     const response = await fetch(path, request);
     status = response.status;
     const data = await readApiResponse(response);
+    if (response.status === 401) {
+      saveBattleToken("");
+      saveBattleAccount("");
+      redirectToBattleLobby("登录已失效，请重新登录。");
+    }
     if (!response.ok || data.error || data.detail) {
       const detail = data.error || data.detail || `请求失败：${response.status}`;
+      if (
+        APP_MODE === "battle" &&
+        String(path).startsWith("/api/battle/") &&
+        /room not found|closed|房间/.test(String(detail))
+      ) {
+        redirectToBattleLobby("房间不存在或已关闭，请重新选择房间。");
+      }
       throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
     ok = true;
@@ -172,7 +398,7 @@ function recordBattleApiTiming(path, method, elapsedMs, status, ok) {
     ok: Boolean(ok),
     ts: Date.now(),
   });
-  recentBattleApiTimings = recentBattleApiTimings.slice(-8);
+  recentBattleApiTimings = recentBattleApiTimings.slice(-60);
 }
 function tileLabel(code) {
   if (!code) return "";
@@ -184,7 +410,7 @@ function speechTileName(code) {
   const rank = value.match(/\d+/)?.[0] || "";
   if (/^m[1-9]$/.test(value)) return `${rank}万`;
   if (/^t[1-9]$/.test(value)) return `${rank}条`;
-  if (/^b[1-9]$/.test(value)) return `${rank}饼`;
+  if (/^b[1-9]$/.test(value)) return `${rank}筒`;
   const honors = {
     east: "东",
     south: "南",
@@ -192,22 +418,68 @@ function speechTileName(code) {
     north: "北",
     zhong: "中",
     fa: "发",
-    bai: "白"
+    bai: "白",
   };
   return honors[value] || tileLabel(code);
 }
 
-function speak(text) {
-  if (!voiceEnabled || !text || !("speechSynthesis" in window)) return;
+function scheduleSpeechPump(delayMs = 0) {
+  if (speechPendingTimer !== null) window.clearTimeout(speechPendingTimer);
+  speechPendingTimer = window.setTimeout(() => {
+    speechPendingTimer = null;
+    pumpSpeechQueue();
+  }, Math.max(0, delayMs));
+}
+
+function nativeSpeechBridge() {
+  return window.AndroidSpeech && typeof window.AndroidSpeech.speak === "function" ? window.AndroidSpeech : null;
+}
+
+function playSpeechNow(text) {
+  const nativeSpeech = nativeSpeechBridge();
+  if (nativeSpeech) {
+    speechActiveSince = Date.now();
+    nativeSpeech.speak(text);
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "zh-CN";
+  utterance.rate = 1.08;
+  utterance.pitch = 1;
+  utterance.onend = () => {
+    if (speechQueue.length) scheduleSpeechPump(0);
+  };
+  utterance.onerror = () => {
+    if (speechQueue.length) scheduleSpeechPump(0);
+  };
+  speechActiveSince = Date.now();
+  window.speechSynthesis.speak(utterance);
+}
+
+function pumpSpeechQueue() {
+  if (!voiceEnabled || !speechQueue.length || (!nativeSpeechBridge() && !("speechSynthesis" in window))) return;
   try {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "zh-CN";
-    utterance.rate = 1.08;
-    utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
+    const elapsed = Date.now() - speechActiveSince;
+    if (speechActiveSince > 0 && elapsed < SPEECH_MIN_AUDIBLE_MS) {
+      scheduleSpeechPump(SPEECH_MIN_AUDIBLE_MS - elapsed);
+      return;
+    }
+    const next = speechQueue.shift();
+    if (next) playSpeechNow(next);
+    if (speechQueue.length) scheduleSpeechPump(SPEECH_MIN_AUDIBLE_MS);
   } catch {
     voiceEnabled = false;
+    speechQueue = [];
   }
+}
+
+function speak(text) {
+  if (!voiceEnabled || !text || (!nativeSpeechBridge() && !("speechSynthesis" in window))) return;
+  const value = String(text).trim();
+  if (!value) return;
+  speechQueue.push(value);
+  pumpSpeechQueue();
 }
 
 function historyEventKey(entry) {
@@ -219,17 +491,67 @@ function spokenTextForEvent(entry) {
   if (!entry) return "";
   if (entry.event === "discard" && entry.tile) return speechTileName(entry.tile);
   if (entry.event === "claim") {
-    if (entry.kind === "chi") return "吃";
-    if (entry.kind === "peng") return "碰";
-    if (entry.kind === "ming_gang") return "杠";
-    if (entry.message?.includes("吃")) return "吃";
-    if (entry.message?.includes("碰")) return "碰";
-    if (entry.message?.includes("杠")) return "杠";
+    if (entry.kind === "chi") return "\u5403";
+    if (entry.kind === "peng") return "\u78b0";
+    if (entry.kind === "ming_gang") return "\u6760";
+    if (entry.message?.includes("\u5403")) return "\u5403";
+    if (entry.message?.includes("\u78b0")) return "\u78b0";
+    if (entry.message?.includes("\u6760")) return "\u6760";
   }
-  if (entry.event === "kong") return "杠";
-  if (entry.event === "flower") return "补花";
-  if (entry.event === "win") return "胡";
+  if (entry.event === "kong") return "\u6760";
+  if (entry.event === "flower") return "\u8865\u82b1";
+  if (entry.event === "win") return "\u80e1";
   return "";
+}
+
+function shouldAnimateSpokenAction(entry) {
+  if (!entry || entry.event === "discard" || entry.event === "win") return false;
+  return ["claim", "kong", "flower"].includes(entry.event);
+}
+
+function triggerSeatActionEffect(entry, text) {
+  if (!shouldAnimateSpokenAction(entry) || !text) return;
+  const seat = Number(entry.seat);
+  if (!Number.isInteger(seat)) return;
+  const key = historyEventKey(entry);
+  seatActionEffects.set(seat, {
+    key,
+    text,
+    kind: String(entry.kind || entry.event || "action"),
+    expiresAt: Date.now() + 1000,
+  });
+  if (seatActionEffectTimers.has(seat)) {
+    window.clearTimeout(seatActionEffectTimers.get(seat));
+  }
+  const timer = window.setTimeout(() => {
+    const current = seatActionEffects.get(seat);
+    if (current?.key === key) {
+      seatActionEffects.delete(seat);
+      if (state) {
+        renderPlayers();
+        renderTableCanvas();
+        updateSelectedTileHighlights();
+      }
+    }
+    seatActionEffectTimers.delete(seat);
+  }, 1000);
+  seatActionEffectTimers.set(seat, timer);
+}
+
+function seatActionEffectHtml(seat) {
+  const effect = seatActionEffects.get(Number(seat));
+  if (!effect) return "";
+  if (effect.expiresAt <= Date.now()) {
+    seatActionEffects.delete(Number(seat));
+    return "";
+  }
+  return `<span class="seat-action-pop" data-action-kind="${escapeAttr(effect.kind)}">${escapeXml(effect.text)}</span>`;
+}
+
+function seatActionEffectAnchorHtml(player) {
+  const pop = seatActionEffectHtml(player?.seat);
+  if (!pop) return "";
+  return `<span class="seat-action-anchor seat-action-${seatClass(player.seat)}" data-seat="${player.seat}">${pop}</span>`;
 }
 
 function announceNewHistory(previous, next) {
@@ -238,7 +560,10 @@ function announceNewHistory(previous, next) {
   for (const entry of next.history || []) {
     if (previousKeys.has(historyEventKey(entry))) continue;
     const text = spokenTextForEvent(entry);
-    if (text) speak(text);
+    if (text) {
+      speak(text);
+      triggerSeatActionEffect(entry, text);
+    }
   }
 }
 
@@ -279,14 +604,84 @@ function syncSelectedDiscardTile() {
     return;
   }
   if (selectedDiscardKey) {
-    const keys = new Set(displayedHandTiles(human).tiles.map((code, index) => `${code}:${index}`));
+    const tiles = displayedHandTiles(human).tiles;
+    const keys = new Set(tiles.map((code, index) => `${code}:${index}`));
     if (!keys.has(selectedDiscardKey)) {
-      selectedDiscardTile = null;
-      selectedDiscardKey = null;
+      const replacementIndex = tiles.findIndex((code) => code === selectedDiscardTile);
+      if (replacementIndex >= 0) {
+        selectedDiscardKey = `${selectedDiscardTile}:${replacementIndex}`;
+      } else {
+        selectedDiscardTile = null;
+        selectedDiscardKey = null;
+      }
     }
   }
 }
+
+function clearTransientActionNotice() {
+  transientActionNotice = "";
+  if (transientActionNoticeTimer) {
+    window.clearTimeout(transientActionNoticeTimer);
+    transientActionNoticeTimer = null;
+  }
+}
+
+function showTransientActionNotice(message, timeoutMs = 1400) {
+  transientActionNotice = String(message || "");
+  if (transientActionNoticeTimer) window.clearTimeout(transientActionNoticeTimer);
+  transientActionNoticeTimer = window.setTimeout(() => {
+    transientActionNotice = "";
+    transientActionNoticeTimer = null;
+    renderActionsV2();
+  }, timeoutMs);
+}
+
+function isStaleBattleActionError(error) {
+  const message = String(error?.message || error || "");
+  return /閻樿埖鈧礁鍑￠弴瀛樻煀|瀹稿弶娲块弬鐨榞eneration|stale|pending|action_token|閸掗攱鏌婅ぐ鎾冲閻楀苯鐪悩鑸碘偓浜呴柌宥嗘煀闁瀚ㄩ崝銊ょ稊/i.test(message);
+}
+
+function sameActionIntent(left, right) {
+  if (!left || !right || String(left.type || "") !== String(right.type || "")) return false;
+  const type = String(left.type || "");
+  if (left.tile !== undefined || right.tile !== undefined) {
+    if (String(left.tile || "") !== String(right.tile || "")) return false;
+  }
+  if (type === "chi") {
+    const leftTiles = Array.isArray(left.tiles) ? left.tiles.map(String) : [];
+    const rightTiles = Array.isArray(right.tiles) ? right.tiles.map(String) : [];
+    if (leftTiles.length !== rightTiles.length) return false;
+    return leftTiles.every((tile, index) => tile === rightTiles[index]);
+  }
+  return true;
+}
+
+function currentLegalActionForIntent(action) {
+  const legal = Array.isArray(state?.legal_actions) ? state.legal_actions : [];
+  return legal.find((candidate) => sameActionIntent(action, candidate)) || null;
+}
+
+function cssEscapeValue(value) {
+  if (window.CSS?.escape) return window.CSS.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+function updateSelectedTileHighlights() {
+  document.querySelectorAll(".tile.tile-selected-match").forEach((tile) => {
+    tile.classList.remove("tile-selected-match");
+  });
+  if (!selectedDiscardTile) return;
+  const selector = `.table-world-layer .tile[data-tile="${cssEscapeValue(selectedDiscardTile)}"]`;
+  document.querySelectorAll(selector).forEach((tile) => {
+    tile.classList.add("tile-selected-match");
+  });
+}
 function setGameState(next, { announce = true, force = false } = {}) {
+  if (APP_MODE === "battle" && next?.room_status === "closed") {
+    alert("房间已关闭，返回大厅。");
+    redirectToBattleLobby("房间已关闭，请重新选择房间。");
+    return false;
+  }
   if (
     APP_MODE === "battle" &&
     state &&
@@ -327,6 +722,7 @@ function setGameState(next, { announce = true, force = false } = {}) {
   }
   const previous = state;
   state = next;
+  mergeBattleRoomSummaryFromState(next);
   if (
     APP_MODE === "battle" &&
     pendingActionFeedback &&
@@ -342,6 +738,7 @@ function setGameState(next, { announce = true, force = false } = {}) {
     pendingActionFeedback = null;
   }
   syncSelectedDiscardTile();
+  if (!selectedDiscardTile) updateSelectedTileHighlights();
   if (announce) announceNewHistory(previous, state);
   return true;
 }
@@ -496,27 +893,27 @@ function characterIcon(code) {
   const numerals = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
   return `
     <text x="42" y="46" text-anchor="middle" font-size="34" font-weight="850" fill="#202020" font-family="serif">${numerals[rank]}</text>
-    <text x="42" y="82" text-anchor="middle" font-size="30" font-weight="900" fill="#c92d2d" font-family="serif">萬</text>
+    <text x="42" y="82" text-anchor="middle" font-size="30" font-weight="900" fill="#c92d2d" font-family="serif">万</text>
   `;
 }
 
 function honorIcon(code) {
   const map = {
-    east: ["東", "#171713"],
+    east: ["东", "#171713"],
     south: ["南", "#171713"],
     west: ["西", "#171713"],
     north: ["北", "#171713"],
     zhong: ["中", "#bf2421"],
-    fa: ["發", "#16804c"],
-    bai: ["白", "#1e5c8a"]
+    fa: ["发", "#16804c"],
+    bai: ["白", "#1e5c8a"],
   };
   const [label, color] = map[code] || [tileLabel(code), "#171713"];
   const frame = code === "bai"
-    ? `<rect x="21" y="26" width="42" height="46" rx="4" fill="none" stroke="#174e86" stroke-width="4"/>`
+    ? '<rect x="24" y="24" width="36" height="52" rx="6" fill="none" stroke="#1e5c8a" stroke-width="4"/>'
     : "";
   return `
     ${frame}
-    <text x="42" y="69" text-anchor="middle" font-size="${code === "fa" ? 45 : 50}" font-weight="900" fill="${color}" font-family="serif">${label}</text>
+    <text x="42" y="60" text-anchor="middle" dominant-baseline="middle" font-size="42" font-weight="900" fill="${color}" font-family="serif">${label}</text>
   `;
 }
 
@@ -526,7 +923,7 @@ function flowerIcon(code) {
   const color = red ? "#c52624" : "#171713";
   const accent = red ? "#f8e5e5" : "#e7eaeb";
   return `
-    <text x="42" y="28" text-anchor="middle" font-size="13" font-weight="850" fill="${color}">${red ? "红花" : "黑花"}</text>
+    <text x="42" y="28" text-anchor="middle" font-size="13" font-weight="850" fill="${color}">${red ? "红花" : "白花"}</text>
     <circle cx="42" cy="58" r="23" fill="${accent}" stroke="${color}" stroke-width="2.8"/>
     <path d="M42 40 C48 49 58 49 62 58 C52 59 49 69 42 77 C35 69 32 59 22 58 C26 49 34 49 42 40Z" fill="${red ? "#dc3a3a" : "#394148"}" opacity="0.18"/>
     <text x="42" y="72" text-anchor="middle" font-size="40" font-weight="900" fill="${color}" font-family="serif">${rank}</text>
@@ -566,7 +963,7 @@ function publicFlowersFor(player) {
   const parsed = [];
   for (const entry of state.history || []) {
     if (entry.event !== "flower" || !entry.message) continue;
-    const marker = `${player.label}补花：`;
+    const marker = `${player.label}摸花：`;
     if (!entry.message.startsWith(marker)) continue;
     const names = entry.message.slice(marker.length).split("、").map((value) => value.trim()).filter(Boolean);
     for (const name of names) {
@@ -577,6 +974,13 @@ function publicFlowersFor(player) {
 
   if (parsed.length >= player.flower_count) return parsed.slice(0, player.flower_count);
   return parsed.concat(Array.from({ length: Math.max(0, player.flower_count - parsed.length) }, () => "*"));
+}
+
+function cssPixelNumber(element, property, fallback) {
+  if (!element) return fallback;
+  const raw = getComputedStyle(element).getPropertyValue(property).trim();
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function tileHtml(code, size = "", extra = "") {
@@ -595,6 +999,102 @@ function meldDisplayTiles(meld) {
   return tiles;
 }
 
+function meldDisplayEntries(meld, ownerSeat) {
+  const entries = meldDisplayTiles(meld).map((code) => ({
+    code,
+    claimed: false,
+    direction: null,
+  }));
+  if (meld?.type === "an_gang") return entries;
+
+  const fromSeat = Number(meld?.from);
+  const seat = Number(ownerSeat);
+  if (!Number.isInteger(fromSeat) || !Number.isInteger(seat) || fromSeat === seat) return entries;
+  const direction = ({ 1: "right", 2: "top", 3: "left" })[(fromSeat - seat + 4) % 4];
+  if (!direction) return entries;
+
+  const claimedIndex = entries.findIndex((entry) => entry.code === meld?.tile);
+  if (claimedIndex < 0) return entries;
+  const [claimed] = entries.splice(claimedIndex, 1);
+  claimed.claimed = true;
+  claimed.direction = direction;
+  const displayIndex = direction === "left" ? 0 : direction === "top" ? 1 : entries.length;
+  entries.splice(Math.min(displayIndex, entries.length), 0, claimed);
+  return entries;
+}
+
+function meldDisplayHtml(meld, ownerSeat) {
+  return meldDisplayEntries(meld, ownerSeat).map((entry) => {
+    const classes = [
+      entry.code === "*" ? "kong-hidden" : "",
+      entry.claimed ? "claimed-discard" : "",
+      entry.direction ? `claimed-from-${entry.direction}` : "",
+    ].filter(Boolean).join(" ");
+    const tile = tileHtml(entry.code, "small", classes);
+    if (!entry.claimed) return tile;
+    const slotClasses = [
+      "claimed-discard-slot",
+      entry.direction ? `claimed-from-${entry.direction}` : "",
+    ].filter(Boolean).join(" ");
+    return `<span class="${slotClasses}">${tile}</span>`;
+  }).join("");
+}
+
+function meldDisplaySpanUnits(meld, ownerSeat) {
+  return meldDisplayEntries(meld, ownerSeat).reduce((sum, entry) => (
+    sum + (entry.claimed ? 1.34 : 1)
+  ), 0);
+}
+
+function splitPublicMeldRows(melds, ownerSeat, options = {}) {
+  const main = [];
+  const overflow = [];
+  let mainUnits = 0;
+  let overflowUnits = 0;
+  const rowLimit = BATTLE_PUBLIC_MELD_ROW_LIMIT;
+  const maxMainCount = Math.max(1, Number(options.maxMainCount) || 2);
+  for (const meld of melds || []) {
+    const span = meldDisplaySpanUnits(meld, ownerSeat);
+    const mainCanFit = !main.length || (
+      main.length < maxMainCount
+      && mainUnits + span <= rowLimit
+    );
+    if (mainCanFit) {
+      main.push(meld);
+      mainUnits += span;
+    } else {
+      overflow.push(meld);
+      overflowUnits += span;
+    }
+  }
+  return { main, overflow, mainUnits, overflowUnits };
+}
+
+function publicDensityFor(flowers, melds, totalUnits) {
+  const flowerCount = Array.isArray(flowers) ? flowers.length : Number(flowers) || 0;
+  const meldCount = Array.isArray(melds) ? melds.length : Number(melds) || 0;
+  if (totalUnits > BATTLE_PUBLIC_OVERFLOW_LIMIT || flowerCount >= 9 || meldCount >= 5) {
+    return "overflow";
+  }
+  if (totalUnits > BATTLE_PUBLIC_COMPACT_LIMIT || flowerCount >= 7) {
+    return "compact";
+  }
+  return "normal";
+}
+
+function publicMaxMainMeldCount(density) {
+  return density === "overflow" ? 3 : 2;
+}
+
+function publicMeldRowSpanUnits(melds, ownerSeat) {
+  const rows = splitPublicMeldRows(melds, ownerSeat);
+  return Math.max(rows.mainUnits, rows.overflowUnits);
+}
+
+function publicMeldTotalUnits(melds, ownerSeat) {
+  return (melds || []).reduce((sum, meld) => sum + meldDisplaySpanUnits(meld, ownerSeat), 0);
+}
+
 function expandHand(hand) {
   const tiles = [];
   for (const code of tileOrder) {
@@ -606,26 +1106,26 @@ function expandHand(hand) {
 
 function actionText(action) {
   const type = action.type;
-  if (type === "hu") return "和";
+  if (type === "hu") return "胡";
   if (type === "pass") return "过";
   if (type === "an_gang") return `暗杠 ${tileLabel(action.tile)}`;
   if (type === "bu_gang") return `补杠 ${tileLabel(action.tile)}`;
   if (type === "ming_gang") return `明杠 ${tileLabel(action.tile)}`;
   if (type === "peng") return `碰 ${tileLabel(action.tile)}`;
-  if (type === "chi") return `吃 ${action.tiles.map(tileLabel).join("、")}`;
-  if (type === "discard") return `打 ${tileLabel(action.tile)}`;
+  if (type === "chi") return `吃 ${action.tiles.map(tileLabel).join(" ")}`;
+  if (type === "discard") return `出 ${tileLabel(action.tile)}`;
   return type;
 }
 
 function actionIcon(action) {
   const type = action.type;
-  if (type === "hu") return "和";
+  if (type === "hu") return "胡";
   if (type === "pass") return "过";
   if (type === "peng") return "碰";
   if (type === "chi") return "吃";
   if (type.includes("gang")) return "杠";
-  if (type === "discard") return "打";
-  return "令";
+  if (type === "discard") return "出";
+  return "牌";
 }
 
 function actionButtonText(action, legalActions = []) {
@@ -640,22 +1140,22 @@ function actionButtonText(action, legalActions = []) {
     return choices.length > 1 ? `杠 ${tileLabel(action.tile)}` : "杠";
   }
   if (type && type.includes("gang")) return "杠";
-  if (type === "discard") return "出";
+  if (type === "discard") return "出牌";
   return actionText(action);
 }
 
 function phaseText(phase) {
   if (phase === "turn") {
     const player = playerBySeat(state.current_player) || state.players[state.current_player];
-    return player?.is_human ? "轮到你" : `${player?.label || ""} 行牌`;
+    return player?.is_human ? "轮到你出牌" : `${player?.label || ""} 思考中`;
   }
   if (phase === "round_over") return state.win_type || "本局结束";
-  if (phase === "deal") return "发牌";
+  if (phase === "deal") return "发牌中";
   return phase;
 }
 function renderGameHeader() {
   if (activeView !== "game" || !state) return;
-  $("roundMeta").textContent = `第 ${state.round_no} 局 · 当前 ${phaseText(state.phase)}`;
+  $("roundMeta").textContent = `第 ${state.round_no} 局 · ${phaseText(state.phase)}`;
 }
 
 function latestEvent(type) {
@@ -670,6 +1170,17 @@ function latestDiscardEvent() {
   return latestEvent("discard");
 }
 
+function isLiveResponseDiscard(discardEvent) {
+  const pending = state?.pending;
+  if (!discardEvent || !pending || pending.kind !== "response_poll") return false;
+  if (pending.response_kind && pending.response_kind !== "discard") return false;
+  if (pending.tile && discardEvent.tile && String(pending.tile) !== String(discardEvent.tile)) return false;
+  const pendingFrom = Number(pending.from);
+  const discardSeat = Number(discardEvent.seat);
+  if (Number.isInteger(pendingFrom) && Number.isInteger(discardSeat) && pendingFrom !== discardSeat) return false;
+  return true;
+}
+
 function compactActionText(action) {
   if (!action) return "";
   if (action.type === "discard") return "";
@@ -678,18 +1189,18 @@ function compactActionText(action) {
 
 function actionFocusText() {
   const legal = state?.legal_actions || [];
-  if (state?.phase === "round_over") return state?.settlement ? "本局已结算" : "本局结束";
-  if (!legal.length) return state?.current_player === 0 ? "等待摸牌" : "AI 正在思考";
+  if (state?.phase === "round_over") return state?.settlement ? "查看结算" : "本局结束";
+  if (!legal.length) return state?.current_player === 0 ? "等待出牌" : "AI 思考中";
   const priority = legal.map(compactActionText).filter(Boolean);
   if (priority.length) return priority.slice(0, 4).join(" / ");
-  if (legal.some((action) => action.type === "discard")) return "点击下方手牌出牌";
-  return "等待下一步";
+  if (legal.some((action) => action.type === "discard")) return "请选择要出的牌";
+  return "等待操作";
 }
 
 function currentSeatFocus() {
   const player = state?.players?.[state.current_player];
-  if (!player || state?.phase === "round_over") return "对局结束";
-  return player.is_human ? "轮到你" : `${player.label} 行牌`;
+  if (!player || state?.phase === "round_over") return "本局结束";
+  return player.is_human ? "轮到你出牌" : `${player.label} 思考中`;
 }
 
 function chipRankingRows() {
@@ -705,141 +1216,101 @@ function chipRankingRows() {
 
 function renderBattleFocus() {
   const box = $("battleFocus");
-  if (box) {
-    box.innerHTML = "";
-    box.hidden = true;
-  }
-  return;
-  if (!box || !state) return;
-  const discard = latestDiscardEvent();
-  const current = state.players?.[state.current_player];
-  const isHumanTurn = state.phase !== "round_over" && current?.is_human;
-  const focusClass = isHumanTurn ? "is-human-turn" : state.phase === "round_over" ? "is-round-over" : "is-ai-turn";
-  const latestTile = discard?.tile ? tileHtml(discard.tile, "small", "focus-tile") : `<span class="focus-empty">暂无</span>`;
-  const latestText = discard?.message ? escapeXml(discard.message) : "尚未出牌";
-  const actionTextValue = actionFocusText();
-  box.className = `battle-focus ${focusClass}`;
-  box.innerHTML = `
-    <div class="focus-kicker">${phaseText(state.phase)}</div>
-    <div class="focus-main">
-      <span class="focus-turn">${currentSeatFocus()}</span>
-      <span class="focus-wall">牌墙 ${state.wall_remaining ?? "-"} 张</span>
-    </div>
-    <div class="focus-latest">
-      <span>最新弃牌</span>
-      ${latestTile}
-      <strong>${latestText}</strong>
-    </div>
-    <div class="focus-action">
-      <span>${isHumanTurn ? "你现在可以" : "当前重点"}</span>
-      <strong>${actionTextValue}</strong>
-    </div>
-    <div class="focus-chips" aria-label="筹码排行">${chipRankingRows()}</div>
-  `;
+  if (!box) return;
+  box.innerHTML = "";
+  box.hidden = true;
 }
 
 function seatName(index) {
-  return ["下位", "右位", "上位", "左位"][index] || `${index}`;
+  return ["东位", "南位", "西位", "北位"][index] || `${index}`;
 }
 
 function renderBattleShell() {
   const panel = $("battleLoginPanel");
-  if (!panel || activeView !== "game" || APP_MODE === "battle") return;
-  const account = battleAccountValue();
-  const seats = state?.seats || [];
-  const seated = seats.find((seat) => seat.account === account);
-  const ready = Boolean(seated && state?.ready_accounts?.includes(account));
-  const dbPath = state?.db?.path || "";
-  const seatButtons = seats.map((seat) => {
-    const occupied = Boolean(seat.account);
-    const mine = account && seat.account === account;
-    const label = occupied
-      ? `${seatName(seat.seat)}：${escapeXml(seat.account)}${seat.ready ? "（已准备）" : ""}`
-      : `${seatName(seat.seat)}：空闲（默认 ${escapeXml(seat.effective_account || "AI")}）`;
-    const disabled = !account || (occupied && !mine) || (state?.game_started && state?.phase !== "round_over");
-    return `<button class="seat-pick ${mine ? "active" : ""}" data-seat="${seat.seat}" ${disabled ? "disabled" : ""}>${label}</button>`;
-  }).join("");
-  panel.innerHTML = `
-    <div class="battle-login-card">
-      <div class="battle-login-row">
-        <label>账号名 <input id="battleAccountInput" class="wide-input" type="text" value="${escapeAttr(account)}" placeholder="输入账号名即可登录" /></label>
-        <button id="battleRegisterBtn" type="button">注册</button>
-        <button id="battleLoginBtn" class="primary" type="button">${account ? "切换/登录" : "登录"}</button>
-        ${account ? `<span class="tag">当前账号：${escapeXml(account)}</span>` : ""}
-      </div>
-      <div class="battle-seat-grid">${seatButtons}</div>
-      <div class="battle-login-row">
-        <button id="battleReadyBtn" class="${ready ? "ready-toggle ready-off" : "ready-toggle gold"}" type="button" ${!seated ? "disabled" : ""}>${ready ? "已准备" : (state?.phase === "round_over" ? "准备下一局" : "准备")}</button>
-        <button id="battleLeaveBtn" type="button" ${!seated || (state?.game_started && state?.phase !== "round_over") ? "disabled" : ""}>离座</button>
-        <span class="meta">数据库：${escapeXml(dbPath)}</span>
-      </div>
-    </div>
-  `;
-  const input = $("battleAccountInput");
-  const register = $("battleRegisterBtn");
-  const login = $("battleLoginBtn");
-  if (register) register.addEventListener("click", () => registerBattleAccount(input?.value || ""));
-  if (login) login.addEventListener("click", () => loginBattleAccount(input?.value || ""));
-  panel.querySelectorAll(".seat-pick").forEach((button) => {
-    button.addEventListener("click", () => sitBattleSeat(Number(button.dataset.seat)));
-  });
-  if ($("battleReadyBtn")) $("battleReadyBtn").addEventListener("click", readyBattleAccount);
-  if ($("battleLeaveBtn")) $("battleLeaveBtn").addEventListener("click", leaveBattleSeat);
+  if (panel) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+  }
 }
 
 function renderBattleLobbyOnly() {
-  if (APP_MODE === "battle" && state?.game_started && !humanPlayer()) {
-    window.location.href = "/battle-login";
+  if (APP_MODE === "battle" && state?.room_status === "closed") {
+    alert("房间已关闭，返回大厅。");
+    redirectToBattleLobby("房间已关闭，请重新选择房间。");
     return true;
   }
-  if (APP_MODE === "battle" && !state?.game_started) {
-    const account = battleAccountValue();
-    const seated = Boolean(account && (state?.seats || []).some((seat) => seat.account === account));
-    if (!seated) {
-      window.location.href = "/battle-login";
-      return true;
-    }
-    renderBattleShell();
-    if ($("players")) $("players").innerHTML = "";
-    if ($("tableDiscards")) $("tableDiscards").innerHTML = "";
-    if ($("tableCenterInfo")) $("tableCenterInfo").innerHTML = `<div class="center-wall-text">等待准备</div>`;
-    if ($("battleFocus")) $("battleFocus").hidden = true;
-    if ($("settlementPopup")) {
-      $("settlementPopup").classList.remove("visible");
-      $("settlementPopup").innerHTML = "";
-    }
-    if ($("actionBar")) {
-      const ready = Boolean(state?.ready_accounts?.includes(account));
-      $("actionBar").innerHTML = ready ? `<span class="tag">已准备，等待其他玩家</span>` : "";
-      const button = document.createElement("button");
-      button.className = ready ? "ready-toggle ready-off" : "ready-toggle gold";
-      button.textContent = ready ? "已准备" : "准备";
-      button.addEventListener("click", () => newRound(false));
-      $("actionBar").appendChild(button);
-    }
-    if ($("hand")) $("hand").innerHTML = "";
-    if ($("history")) $("history").innerHTML = "";
-    if ($("analysis")) $("analysis").innerHTML = "";
-    renderPlayerStatsModal();
-    updateBattleToolbarControls();
+  if (APP_MODE === "battle" && state?.game_started && !humanPlayer() && !isBattleRoomOwner()) {
+    redirectToBattleLobby("你不在这个房间的座位上，请重新进入房间。");
     return true;
   }
   renderBattleShell();
   if (state?.game_started) return false;
   if ($("players")) $("players").innerHTML = "";
   if ($("tableDiscards")) $("tableDiscards").innerHTML = "";
-  if ($("tableCenterInfo")) $("tableCenterInfo").innerHTML = `<div class="center-wall-text">等待入座准备</div>`;
+  if ($("tableCenterInfo")) $("tableCenterInfo").innerHTML = '<div class="center-wall-text">等待入座准备</div>';
   if ($("battleFocus")) $("battleFocus").hidden = true;
   if ($("settlementPopup")) {
     $("settlementPopup").classList.remove("visible");
     $("settlementPopup").innerHTML = "";
   }
-  if ($("actionBar")) $("actionBar").innerHTML = `<span class="tag">登录、入座并准备后开始游戏</span>`;
+  if ($("actionBar")) $("actionBar").innerHTML = '<span class="tag">请回大厅选择座位并准备</span>';
   if ($("hand")) $("hand").innerHTML = "";
   if ($("history")) $("history").innerHTML = "";
   if ($("analysis")) $("analysis").innerHTML = "";
   renderPlayerStatsModal();
   return true;
+}
+
+function roomRoundCount() {
+  const value = Number(state?.room_round_count ?? state?.round_no ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function playerSeatValueMatches(value, absoluteValue, player) {
+  if (!player) return false;
+  const relativeSeat = Number(player.seat);
+  const absoluteSeat = Number(player.absolute_seat);
+  const candidates = [value, absoluteValue]
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item));
+  return candidates.some((item) =>
+    item === relativeSeat || (Number.isInteger(absoluteSeat) && item === absoluteSeat)
+  );
+}
+
+function playerBaoReason(player) {
+  const liability = player?.bao_liability || player?.bao_reason;
+  if (!liability) return "";
+  if (typeof liability === "string") return liability;
+  return liability.reason || "包牌风险";
+}
+
+function centerSeatHudHtml(seat, position) {
+  const player = playerBySeat(seat);
+  const wind = player ? seatWind(player) : seatWind(seat);
+  const name = player?.name || player?.account || player?.label || "";
+  const chips = player ? player.chips : "-";
+  const active = player && Number(player.seat) === Number(state?.current_player) && state?.phase !== "round_over";
+  const dealer = player && Number(player.seat) === Number(state?.dealer);
+  const warningReason = player?.claim_warning?.reason || "吃碰后进入警示状态";
+  const warning = player?.claim_warning
+    ? `<span class="center-seat-status center-seat-warning" title="${escapeAttr(warningReason)}" aria-label="${escapeAttr(warningReason)}">2连</span>`
+    : "";
+  const baoReason = playerBaoReason(player);
+  const bao = baoReason
+    ? `<span class="center-seat-status center-seat-bao" title="${escapeAttr(baoReason)}" aria-label="${escapeAttr(baoReason)}">包</span>`
+    : "";
+  return `
+    <div class="center-seat-card center-seat-card-${position} ${active ? "active" : ""}" data-dealer="${dealer ? "1" : "0"}" data-seat="${seat}" title="${escapeAttr(player?.name || "")}">
+      <span class="center-seat-main">
+        <span class="center-seat-wind">${escapeXml(wind)}</span>
+        <span class="center-seat-chip">${escapeXml(chips)}</span>
+        ${warning}
+        ${bao}
+      </span>
+      <span class="center-seat-name">${escapeXml(name)}</span>
+    </div>
+  `;
 }
 
 function renderStatus() {
@@ -848,55 +1319,63 @@ function renderStatus() {
   const centerIndicatorMode = state.center_indicator_mode || (state.bao_phase ? "bao" : "de");
   const items = [
     ["庄家", playerBySeat(state.dealer)?.label || ""],
-    ["离黄牌", `${wallToDrawGame} 张`],
-    ["阶段", state.bao_phase ? "包张" : "普通"],
-    [centerIndicatorMode === "bao" ? "包" : "得", centerIndicatorMode === "bao" ? "包" : tileLabel(state.de_indicator)],
-    ["花牌范围", state.flower_set.map(tileLabel).join("、")]
+    ["牌墙", `${wallToDrawGame} 张`],
+    ["包牌", state.bao_phase ? "已进入" : "未进入"],
+    [centerIndicatorMode === "bao" ? "包牌指示" : "得分指示", centerIndicatorMode === "bao" ? "包" : tileLabel(state.de_indicator)],
+    ["花牌", (state.flower_set || []).map(tileLabel).join("、")],
   ];
   const statusStrip = $("statusStrip");
   if (statusStrip) {
     statusStrip.innerHTML = items.map(([label, value]) => `
       <div class="status-item">
-        <div class="status-label">${label}</div>
-        <div class="status-value">${value}</div>
+        <div class="status-label">${escapeXml(label)}</div>
+        <div class="status-value">${escapeXml(value)}</div>
       </div>
     `).join("");
   }
   const center = $("tableCenterInfo");
   if (center) {
-    const indicator = centerIndicatorMode === "bao"
-      ? `<div class="center-bao-mark">包</div>`
-      : `<div class="center-de-tile">${tileHtml(state.de_indicator, "small")}</div>`;
+    const indicator = centerIndicatorMode === "bao" ? "包" : tileLabel(state.de_indicator);
     center.innerHTML = `
-      ${indicator}
-      <div class="center-wall-count"><strong>${wallToDrawGame} 张</strong></div>
-    `;
-  }
-  const centerDice = document.querySelector(".center-dice");
-  if (centerDice) centerDice.textContent = seatWind(state.dealer);
-  const phaseBanner = $("tablePhaseBanner");
-  if (phaseBanner) {
-    phaseBanner.innerHTML = `
-      <span>${phaseText(state.phase)}</span>
-      <strong>第 ${state.round_no} 局</strong>
+      <div class="center-hud-grid">
+        ${centerSeatHudHtml(2, "top")}
+        ${centerSeatHudHtml(3, "left")}
+        <div class="center-core">
+          <div class="center-room-count">余牌 <strong>${escapeXml(wallToDrawGame)}</strong></div>
+          <div class="center-core-row">
+            <div class="center-indicator-card">
+              <span class="center-de-label">${escapeXml(centerIndicatorMode === "bao" ? "包牌" : "得牌")}</span>
+              <span class="${centerIndicatorMode === "bao" ? "center-bao-mark" : "center-de-tile"}">${escapeXml(indicator || "-")}</span>
+            </div>
+            <div class="center-wall-remaining">
+              <span>余牌</span>
+              <strong>${escapeXml(wallToDrawGame)}</strong>
+              <small>张</small>
+            </div>
+          </div>
+        </div>
+        ${centerSeatHudHtml(1, "right")}
+        ${centerSeatHudHtml(0, "bottom")}
+      </div>
     `;
   }
 }
 
 function pendingKindText(kind) {
   const labels = {
-    response_poll: "response",
-    discard_hu: "胡牌",
+    response_poll: "响应",
+    discard_hu: "点炮胡",
     rob_gang: "抢杠",
     ming_gang: "明杠",
     peng: "碰",
-    chi: "吃"
+    chi: "吃",
+    ai_turn: "AI 出牌",
   };
-  return labels[kind] || kind || "响应";
+  return labels[kind] || kind || "等待";
 }
 
 function actionFeedbackLabel(action) {
-  if (!action) return "动作";
+  if (!action) return "操作";
   if (action.type === "discard") return `出 ${tileLabel(action.tile)}`;
   return actionButtonText(action, state?.legal_actions || []) || actionText(action);
 }
@@ -907,11 +1386,11 @@ function pendingWaitingText() {
   const human = humanPlayer();
   const decided = human && Array.isArray(pending.decision_seats)
     && pending.decision_seats.map(Number).includes(Number(human.seat));
-  if (decided) return "已提交，等待其他玩家/AI";
-  if (pending.kind === "ai_turn") return "AI 正在思考";
+  if (decided) return "已提交，等待其他玩家或 AI";
+  if (pending.kind === "ai_turn") return "AI 思考中";
   if (Array.isArray(pending.ai_candidates) && pending.ai_candidates.length) return "等待 AI 响应";
-  if (pending.kind === "response_poll") return "等待响应结算";
-  return `等待${pendingKindText(pending.kind)}`;
+  if (pending.kind === "response_poll") return "等待玩家响应";
+  return `等待 ${pendingKindText(pending.kind)}`;
 }
 
 function clearPendingTimers() {
@@ -988,55 +1467,487 @@ function meldTypeText(type) {
   return type || "副露";
 }
 
-function meldTiles(melds) {
+function meldTiles(melds, ownerSeat) {
   return melds.map((meld) => `
     <span class="meld-set ${meld.type === "an_gang" ? "concealed-kong" : ""}" title="${meldTypeText(meld.type)} ${(meld.tiles || []).map(tileLabel).join(" ")}">
-      ${meldDisplayTiles(meld).map((code) => tileHtml(code, "small", code === "*" ? "kong-hidden" : "")).join("")}
+      ${meldDisplayHtml(meld, ownerSeat)}
       <span class="meld-type">${meldTypeText(meld.type)}</span>
     </span>
   `).join("");
 }
 
-function meldSetHtml(meld) {
+function battleTableRendererState() {
+  if (!state) return null;
+  const removals = claimedDiscardRemovals();
+  return {
+    ...state,
+    players: (state.players || []).map((player) => ({
+      ...player,
+      flowers: publicFlowersFor(player),
+      visible_discards: visibleDiscardsFor(player, removals),
+    })),
+  };
+}
+
+function modelBlock(model, type, seat = undefined, predicate = null) {
+  return (model?.blocks || []).find((block) => (
+    block.type === type
+    && (seat === undefined || Number(block.seat) === Number(seat))
+    && (!predicate || predicate(block))
+  )) || null;
+}
+
+function setImportantStyle(el, property, value) {
+  if (!el || value === null || value === undefined || value === "") return;
+  el.style.setProperty(property, String(value), "important");
+}
+
+function domV7ScaleFactors(tableEl, model) {
+  const rect = tableEl?.getBoundingClientRect?.();
+  const table = model?.config?.table || model?.table || {};
+  return {
+    sx: Math.max(0.01, ((rect?.width || table.width || 1) / Math.max(1, table.width || 1))),
+    sy: Math.max(0.01, ((rect?.height || table.height || 1) / Math.max(1, table.height || 1))),
+  };
+}
+
+function setDomV7PxVar(el, name, value, scale) {
+  if (!el || !Number.isFinite(Number(value))) return;
+  el.style.setProperty(name, `${Math.max(1, Number(value) * scale).toFixed(2)}px`);
+}
+
+function fitScaleToBox(contentW, contentH, boxW, boxH) {
+  return Math.min(
+    1,
+    boxW > 0 ? boxW / Math.max(1, contentW) : 1,
+    boxH > 0 ? boxH / Math.max(1, contentH) : 1
+  );
+}
+
+function bestGridColsForBox(count, tileW, tileH, gap, boxW, boxH, fallbackCols = 6) {
+  const total = Math.max(1, Math.trunc(Number(count) || 0));
+  const safeTileW = Math.max(1, Number(tileW) || 1);
+  const safeGap = Math.max(0, Number(gap) || 0);
+  const safeBoxW = Math.max(1, Number(boxW) || 1);
+  const fallback = Math.max(1, Math.min(total, Math.trunc(Number(fallbackCols) || 6)));
+  const byWidth = Math.floor((safeBoxW + safeGap) / (safeTileW + safeGap));
+  return Math.max(1, Math.min(total, Math.max(fallback, byWidth)));
+}
+
+function localSizeForModelBox(block, seat) {
+  const bbox = block?.bbox || {};
+  const vertical = Number(seat) === 1 || Number(seat) === 3;
+  return vertical
+    ? { w: Number(bbox.h) || 0, h: Number(bbox.w) || 0 }
+    : { w: Number(bbox.w) || 0, h: Number(bbox.h) || 0 };
+}
+
+function rowUnitsWidth(units, tileW, gap) {
+  const value = Math.max(0, Number(units) || 0);
+  if (!value) return 0;
+  return value * tileW + Math.max(0, Math.ceil(value) - 1) * gap;
+}
+
+function modelPercent(value, total) {
+  const numerator = Number(value) || 0;
+  const denominator = Math.max(1, Number(total) || 1);
+  return `${((numerator / denominator) * 100).toFixed(4)}%`;
+}
+
+function modelSeatAngle(seat) {
+  return [0, -90, 180, 90][Number(seat)] || 0;
+}
+
+function placeDomModelRect(el, bbox, table) {
+  if (!el || !bbox || !table) return;
+  el.classList.add("dom-v7-positioned");
+  setImportantStyle(el, "position", "absolute");
+  setImportantStyle(el, "inset", "auto");
+  setImportantStyle(el, "left", modelPercent(bbox.x, table.width));
+  setImportantStyle(el, "top", modelPercent(bbox.y, table.height));
+  setImportantStyle(el, "right", "auto");
+  setImportantStyle(el, "bottom", "auto");
+  setImportantStyle(el, "width", modelPercent(bbox.w, table.width));
+  setImportantStyle(el, "height", modelPercent(bbox.h, table.height));
+  setImportantStyle(el, "transform", "none");
+  setImportantStyle(el, "transform-origin", "center center");
+}
+
+function placeDomModelOrientedRect(el, bbox, table, angle) {
+  if (!el || !bbox || !table) return;
+  const normalized = Math.abs(Math.round(Number(angle) || 0)) % 180;
+  const localW = normalized === 90 ? bbox.h : bbox.w;
+  const localH = normalized === 90 ? bbox.w : bbox.h;
+  const cx = bbox.x + bbox.w / 2;
+  const cy = bbox.y + bbox.h / 2;
+  el.classList.add("dom-v7-positioned");
+  setImportantStyle(el, "position", "absolute");
+  setImportantStyle(el, "inset", "auto");
+  setImportantStyle(el, "left", modelPercent(cx, table.width));
+  setImportantStyle(el, "top", modelPercent(cy, table.height));
+  setImportantStyle(el, "right", "auto");
+  setImportantStyle(el, "bottom", "auto");
+  setImportantStyle(el, "width", modelPercent(localW, table.width));
+  setImportantStyle(el, "height", modelPercent(localH, table.height));
+  setImportantStyle(el, "transform", `translate(-50%, -50%) rotate(${Number(angle) || 0}deg)`);
+  setImportantStyle(el, "transform-origin", "center center");
+}
+
+function normalizeDomInnerLayout(layout, fallbackAlign = "start") {
+  const rawAlign = String(layout?.innerAlign || fallbackAlign || "start").toLowerCase();
+  const innerAlign = rawAlign === "center" || rawAlign === "end" ? rawAlign : "start";
+  const innerFlow = String(layout?.innerFlow || "forward").toLowerCase() === "reverse"
+    ? "reverse"
+    : "forward";
+  return { innerAlign, innerFlow };
+}
+
+function cssMainAlign(innerAlign) {
+  if (innerAlign === "center") return "center";
+  if (innerAlign === "end") return "flex-end";
+  return "flex-start";
+}
+
+function applyDomV7InnerLayout(el, block, fallbackAlign = "start") {
+  if (!el) return;
+  const layout = normalizeDomInnerLayout(block?.layout, fallbackAlign);
+  el.dataset.innerAlign = layout.innerAlign;
+  el.dataset.innerFlow = layout.innerFlow;
+  setImportantStyle(el, "justify-content", cssMainAlign(layout.innerAlign));
+  setImportantStyle(el, "align-items", "center");
+  setImportantStyle(el, "flex-direction", layout.innerFlow === "reverse" ? "row-reverse" : "row");
+  setImportantStyle(el, "overflow", "visible");
+  setImportantStyle(el, "overflow-x", "visible");
+  setImportantStyle(el, "overflow-y", "visible");
+  if (el.classList?.contains("meld-row")) {
+    el.querySelectorAll(".meld-set").forEach((set) => {
+      setImportantStyle(set, "flex-direction", layout.innerFlow === "reverse" ? "row-reverse" : "row");
+    });
+  }
+}
+
+function applyDomV7GridLayout(gridEl, block, fallbackAlign = "center") {
+  if (!gridEl) return;
+  const layout = normalizeDomInnerLayout(block?.layout, fallbackAlign);
+  gridEl.dataset.innerAlign = layout.innerAlign;
+  gridEl.dataset.innerFlow = layout.innerFlow;
+  const justify = layout.innerAlign === "center"
+    ? "center"
+    : layout.innerAlign === "end"
+      ? "end"
+      : "start";
+  setImportantStyle(gridEl, "justify-content", justify);
+  setImportantStyle(gridEl, "align-content", justify);
+  setImportantStyle(gridEl, "direction", layout.innerFlow === "reverse" ? "rtl" : "ltr");
+  setImportantStyle(gridEl, "overflow", "visible");
+  setImportantStyle(gridEl, "overflow-x", "visible");
+  setImportantStyle(gridEl, "overflow-y", "visible");
+  setImportantStyle(gridEl, "position", "static");
+  setImportantStyle(gridEl, "inset", "auto");
+  setImportantStyle(gridEl, "left", "auto");
+  setImportantStyle(gridEl, "top", "auto");
+  setImportantStyle(gridEl, "right", "auto");
+  setImportantStyle(gridEl, "bottom", "auto");
+  setImportantStyle(gridEl, "transform", "none");
+  setImportantStyle(gridEl, "transform-origin", "0 0");
+  setImportantStyle(gridEl, "align-self", "flex-start");
+  setImportantStyle(gridEl, "justify-self", "flex-start");
+  setImportantStyle(gridEl, "margin", "0");
+  setImportantStyle(gridEl, "width", "100%");
+  setImportantStyle(gridEl, "height", "100%");
+}
+
+function setDomV7ScaleVars(tableEl, model) {
+  if (!tableEl || !model?.config?.table) return;
+  const cfg = model.config;
+  setDomV7PxVar(tableEl, "--remote-tile-w", cfg.remoteHand.tileW * BATTLE_DOM_V7_REMOTE_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--remote-tile-h", cfg.remoteHand.tileH * BATTLE_DOM_V7_REMOTE_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--meld-tile-w", cfg.publicArea.tileW * BATTLE_DOM_V7_PUBLIC_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--meld-tile-h", cfg.publicArea.tileH * BATTLE_DOM_V7_PUBLIC_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--river-face-w", cfg.river.tileW * BATTLE_DOM_V7_RIVER_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--river-face-h", cfg.river.tileH * BATTLE_DOM_V7_RIVER_TILE_SCALE, 1);
+  setDomV7PxVar(tableEl, "--river-gap-x", cfg.river.gap, 1);
+  setDomV7PxVar(tableEl, "--river-gap-y", cfg.river.gap, 1);
+}
+
+function setDomV7RiverVars(zone, river, model) {
+  const tableEl = document.querySelector(".mahjong-table");
+  if (!zone || !model?.config?.river || !tableEl) return;
+  const denseScale = river?.mode === "dense" ? 0.9 : 1;
+  const baseTileW = model.config.river.tileW * denseScale * BATTLE_DOM_V7_RIVER_TILE_SCALE;
+  const baseTileH = model.config.river.tileH * denseScale * BATTLE_DOM_V7_RIVER_TILE_SCALE;
+  const baseGap = model.config.river.gap;
+  const local = localSizeForModelBox(river, river.seat);
+  const visibleCount = Math.max(
+    1,
+    Number(zone.dataset.visibleCount)
+      || Math.min(Number(river.discardCount) || 0, Number(river.visibleLimit) || 0)
+      || Number(river.cols)
+      || model.config.river.cols
+      || 6
+  );
+  const cols = bestGridColsForBox(
+    visibleCount,
+    baseTileW,
+    baseTileH,
+    baseGap,
+    local.w,
+    local.h,
+    Number(river.cols) || model.config.river.cols || 6
+  );
+  const rows = Math.max(1, Math.ceil(visibleCount / cols));
+  const contentW = cols * baseTileW + Math.max(0, cols - 1) * baseGap;
+  const contentH = rows * baseTileH + Math.max(0, rows - 1) * baseGap;
+  const fitScale = fitScaleToBox(contentW, contentH, local.w, local.h);
+  zone.style.setProperty("--river-cols", String(cols));
+  setDomV7PxVar(zone, "--river-face-w", baseTileW * fitScale, 1);
+  setDomV7PxVar(zone, "--river-face-h", baseTileH * fitScale, 1);
+  setDomV7PxVar(zone, "--river-gap-x", baseGap * fitScale, 1);
+  setDomV7PxVar(zone, "--river-gap-y", baseGap * fitScale, 1);
+  zone.dataset.fitScale = fitScale.toFixed(4);
+  zone.dataset.gridCols = String(cols);
+  zone.dataset.gridRows = String(rows);
+}
+
+function setDomV7PublicVars(row, publicBlock, model, rowBlock = null) {
+  const tableEl = document.querySelector(".mahjong-table");
+  if (!row || !publicBlock?.metrics || !tableEl) return;
+  const baseTileW = publicBlock.metrics.tileW * BATTLE_DOM_V7_PUBLIC_TILE_SCALE;
+  const baseTileH = publicBlock.metrics.tileH * BATTLE_DOM_V7_PUBLIC_TILE_SCALE;
+  const baseGap = publicBlock.metrics.gap;
+  let contentW = rowBlock?.bbox?.w || publicBlock.metrics.width || 0;
+  if (rowBlock?.type === "flowers") {
+    const layout = publicBlock.metrics.flowerLayout || {};
+    contentW = rowUnitsWidth(layout.rowUnits, baseTileW, baseGap);
+  } else if (rowBlock?.type === "melds") {
+    contentW = rowUnitsWidth(rowBlock.units, baseTileW, baseGap);
+  }
+  const local = rowBlock?.localBBox
+    ? { w: Number(rowBlock.localBBox.w) || 0, h: Number(rowBlock.localBBox.h) || 0 }
+    : localSizeForModelBox(rowBlock || publicBlock, publicBlock.seat);
+  const fitScale = fitScaleToBox(contentW, baseTileH, local.w, local.h);
+  setDomV7PxVar(row, "--meld-tile-w", baseTileW * fitScale, 1);
+  setDomV7PxVar(row, "--meld-tile-h", baseTileH * fitScale, 1);
+  setDomV7PxVar(row, "--meld-gap", baseGap * fitScale, 1);
+  row.dataset.fitScale = fitScale.toFixed(4);
+}
+
+function setDomV7HandVars(row, handBlock, model) {
+  if (!row || !handBlock?.metrics || !model?.config?.remoteHand) return;
+  const baseTileW = Number(handBlock.metrics.tileW) || model.config.remoteHand.tileW;
+  const baseTileH = Number(handBlock.metrics.tileH) || model.config.remoteHand.tileH;
+  const baseStep = Number(handBlock.metrics.step) || baseTileW;
+  const count = Math.max(1, Number(handBlock.tileCount) || model.config.remoteHand.maxTiles || 17);
+  const contentW = baseTileW + Math.max(0, count - 1) * baseStep;
+  const local = localSizeForModelBox(handBlock, handBlock.seat);
+  const fitScale = fitScaleToBox(contentW, baseTileH, local.w, local.h);
+  setDomV7PxVar(row, "--remote-tile-w", baseTileW * fitScale, 1);
+  setDomV7PxVar(row, "--remote-tile-h", baseTileH * fitScale, 1);
+  row.dataset.fitScale = fitScale.toFixed(4);
+}
+
+function applyDomV7Layout(model, options = {}) {
+  const tableEl = document.querySelector(".mahjong-table");
+  if (!tableEl || !model?.table) return;
+  tableEl.dataset.domV7Layout = "model";
+  tableEl.dataset.tableModelOk = model.ok ? "1" : "0";
+  tableEl.dataset.tableModelDiagnostics = String(model.diagnostics?.length || 0);
+  if (!options.keepCanvasCenter) tableEl.dataset.centerCanvas = "0";
+  setDomV7ScaleVars(tableEl, model);
+
+  const table = model.table;
+  const world = $("tableWorld");
+  if (world) {
+    setImportantStyle(world, "inset", "auto");
+    setImportantStyle(world, "left", "0");
+    setImportantStyle(world, "right", "0");
+    setImportantStyle(world, "top", "var(--battle-content-offset-y, 0px)");
+    setImportantStyle(world, "bottom", "auto");
+    setImportantStyle(world, "width", "100%");
+    setImportantStyle(world, "height", "var(--battle-content-h, 100%)");
+    setImportantStyle(world, "transform", "none");
+    setImportantStyle(world, "transform-origin", "50% 50%");
+  }
+
+  const center = modelBlock(model, "center");
+  if (center) placeDomModelRect($("tableCenterInfo"), center.bbox, table);
+
+  for (const seat of [0, 1, 2, 3]) {
+    const seatKey = seatClass(seat);
+    const playerEl = document.querySelector(`.table-seat[data-seat="${seat}"]`);
+    const angle = modelSeatAngle(seat);
+
+    const river = modelBlock(model, "river", seat);
+    const zone = document.querySelector(`.discard-${seatKey}`);
+    if (river && zone) {
+      placeDomModelOrientedRect(zone, river.bbox, table, angle);
+      setImportantStyle(zone, "overflow", "visible");
+      setImportantStyle(zone, "overflow-x", "visible");
+      setImportantStyle(zone, "overflow-y", "visible");
+      setDomV7RiverVars(zone, river, model);
+      zone.dataset.modelMode = river.mode || "";
+      const tiles = zone.querySelector(".discard-tiles");
+      if (tiles) {
+        setImportantStyle(tiles, "width", "100%");
+        setImportantStyle(tiles, "height", "100%");
+        applyDomV7GridLayout(tiles, river, "start");
+      }
+    }
+
+    if (seat !== 0 && playerEl) {
+      const hand = modelBlock(model, "hand", seat);
+      const handRow = playerEl.querySelector(".seat-tile-row.concealed, .seat-tile-row.revealed-hand");
+      if (hand && handRow) {
+        placeDomModelOrientedRect(handRow, hand.bbox, table, angle);
+        setDomV7HandVars(handRow, hand, model);
+        applyDomV7InnerLayout(handRow, hand, "center");
+        handRow.dataset.modelPose = hand.pose || hand.mode || "";
+      }
+    }
+
+    if (playerEl) {
+      const publicBlock = modelBlock(model, "public", seat);
+      const flowers = modelBlock(model, "flowers", seat);
+      const flowerRow = playerEl.querySelector(".flower-row");
+      if (flowers && flowerRow) {
+        placeDomModelOrientedRect(flowerRow, flowers.bbox, table, angle);
+        setDomV7PublicVars(flowerRow, publicBlock, model, flowers);
+        applyDomV7InnerLayout(flowerRow, flowers, "start");
+      }
+
+      const mainMelds = modelBlock(model, "melds", seat, (block) => block.row === "main");
+      const mainRow = playerEl.querySelector(".meld-row-main");
+      if (mainMelds && mainRow) {
+        placeDomModelOrientedRect(mainRow, mainMelds.bbox, table, angle);
+        setDomV7PublicVars(mainRow, publicBlock, model, mainMelds);
+        applyDomV7InnerLayout(mainRow, mainMelds, "start");
+      }
+
+      const overflowMelds = modelBlock(model, "melds", seat, (block) => block.row === "overflow");
+      const overflowRow = playerEl.querySelector(".meld-row-overflow");
+      if (overflowMelds && overflowRow) {
+        placeDomModelOrientedRect(overflowRow, overflowMelds.bbox, table, angle);
+        setDomV7PublicVars(overflowRow, publicBlock, model, overflowMelds);
+        applyDomV7InnerLayout(overflowRow, overflowMelds, "start");
+      }
+    }
+  }
+}
+
+function applyDomV7FallbackLayout(rendererState, reason = "") {
+  const table = document.querySelector(".mahjong-table");
+  if (!table || !window.BattleTableModel?.createBattleTableModel) return false;
+  table.dataset.renderer = "dom";
+  table.dataset.tileRenderer = "dom";
+  table.classList.add("dom-v7-tiles");
+  table.dataset.geometry = BATTLE_TABLE_LAYOUT_MODE;
+  table.dataset.centerCanvas = "0";
+  if (reason) table.dataset.rendererFallback = reason;
+  applyDomV7Layout(window.BattleTableModel.createBattleTableModel(rendererState));
+  return true;
+}
+
+function renderTableCanvas() {
+  const table = document.querySelector(".mahjong-table");
+  if (!table) return;
+  table.dataset.renderer = BATTLE_TABLE_RENDERER_MODE;
+  table.dataset.tileRenderer = BATTLE_TABLE_RENDERER_MODE === "canvas"
+    ? BATTLE_TABLE_TILE_RENDERER_MODE
+    : "dom";
+  table.dataset.geometry = BATTLE_TABLE_LAYOUT_MODE;
+  table.classList.toggle("dom-v7-tiles", table.dataset.tileRenderer === "dom");
+  const rendererState = battleTableRendererState();
+  if (BATTLE_TABLE_RENDERER_MODE !== "canvas") {
+    applyDomV7FallbackLayout(rendererState);
+    return;
+  }
+  const canvas = $("tableCanvas");
+  if (!canvas || !window.BattleTableRenderer || !window.BattleTableModel) {
+    applyDomV7FallbackLayout(rendererState, "missing-canvas-renderer");
+    return;
+  }
+  try {
+    const useDomTiles = BATTLE_TABLE_TILE_RENDERER_MODE === "dom";
+    const plan = window.BattleTableRenderer.render(canvas, rendererState, {
+      tileNames,
+      tileImagePaths,
+      flatTable: true,
+      drawTiles: !useDomTiles,
+      drawCenter: false,
+      supersampleDpr: 3,
+      tableModelApi: window.BattleTableModel,
+    });
+    table.dataset.tableModelOk = plan?.ok ? "1" : "0";
+    table.dataset.tableModelDiagnostics = String(plan?.diagnostics?.length || 0);
+    table.dataset.centerCanvas = "0";
+    table.dataset.canvasRenderMs = String(plan?.performance?.totalMs ?? "");
+    table.dataset.canvasPlanMs = String(plan?.performance?.planMs ?? "");
+    table.dataset.canvasDrawMs = String(plan?.performance?.drawMs ?? "");
+    table.dataset.canvasFirstFrameMs = String(plan?.performance?.firstFrameMs ?? "");
+    table.dataset.canvasCommandCount = String(plan?.performance?.commandCount ?? "");
+    table.dataset.canvasHitBoxCount = String(plan?.performance?.hitBoxCount ?? "");
+    table.dataset.canvasDrawCalls = String(plan?.performance?.canvasDrawCalls ?? "");
+    applyDomV7Layout(plan?.model, { keepCanvasCenter: false });
+    table.dataset.centerCanvas = "0";
+  } catch (error) {
+    recordBattleClientError("canvas-renderer", error);
+    console.warn("battle canvas renderer failed", error);
+    applyDomV7FallbackLayout(rendererState, "canvas-error");
+  }
+}
+
+function meldSetHtml(meld, ownerSeat) {
   return `
     <span class="meld-set ${meld.type === "an_gang" ? "concealed-kong" : ""}" title="${meldTypeText(meld.type)} ${(meld.tiles || []).map(tileLabel).join(" ")}">
-      ${meldDisplayTiles(meld).map((code) => tileHtml(code, "small", code === "*" ? "kong-hidden" : "")).join("")}
+      ${meldDisplayHtml(meld, ownerSeat)}
       <span class="meld-type">${meldTypeText(meld.type)}</span>
     </span>
   `;
 }
 
-function rowCapacityStyle(count) {
-  const rowCount = Math.max(10, Number(count) || 0);
-  return `style="--row-count:${rowCount};--row-gaps:${Math.max(0, rowCount - 1)}"`;
+function rowCapacityStyle(count, units = count) {
+  const rowCount = Math.max(1, Number(count) || 0);
+  const rowUnits = Math.max(1, Number(units) || rowCount);
+  return `style="--row-count:${rowCount};--row-units:${rowUnits.toFixed(2)};--row-gaps:${Math.max(0, rowCount - 1)}"`;
 }
 
-function publicMeldRows(melds) {
-  const main = [];
-  const overflow = [];
-  let mainTiles = 0;
-  let overflowTiles = 0;
-  for (const meld of melds || []) {
-    const tileCount = (meld.tiles || []).length;
-    if (mainTiles + tileCount <= 10) {
-      main.push(meld);
-      mainTiles += tileCount;
-    } else {
-      overflow.push(meld);
-      overflowTiles += tileCount;
-    }
-  }
+function publicMeldRows(melds, ownerSeat, density = "normal") {
+  const { main, overflow, mainUnits, overflowUnits } = splitPublicMeldRows(melds, ownerSeat, {
+    maxMainCount: publicMaxMainMeldCount(density),
+  });
   return `
-    <div class="seat-tile-row meld-row meld-row-overflow" ${rowCapacityStyle(overflowTiles)}>${overflow.map(meldSetHtml).join("")}</div>
-    <div class="seat-tile-row meld-row meld-row-main" ${rowCapacityStyle(mainTiles)}>${main.map(meldSetHtml).join("")}</div>
+    <div class="seat-tile-row meld-row meld-row-overflow" data-row-units="${overflowUnits.toFixed(2)}" ${rowCapacityStyle(Math.ceil(overflowUnits), overflowUnits)}>${overflow.map((meld) => meldSetHtml(meld, ownerSeat)).join("")}</div>
+    <div class="seat-tile-row meld-row meld-row-main" data-row-units="${mainUnits.toFixed(2)}" ${rowCapacityStyle(Math.ceil(mainUnits), mainUnits)}>${main.map((meld) => meldSetHtml(meld, ownerSeat)).join("")}</div>
   `;
+}
+
+function publicLayoutStats(player) {
+  const flowers = publicFlowersFor(player);
+  const melds = player.melds || [];
+  const meldTotalUnits = publicMeldTotalUnits(melds, player.seat);
+  const totalUnits = meldTotalUnits + flowers.length;
+  const density = publicDensityFor(flowers, melds, totalUnits);
+  const split = splitPublicMeldRows(melds, player.seat, {
+    maxMainCount: publicMaxMainMeldCount(density),
+  });
+  const meldRowUnits = Math.max(split.mainUnits, split.overflowUnits);
+  const maxUnits = Math.max(flowers.length, meldRowUnits);
+  return {
+    flowers,
+    melds,
+    meldUnits: meldRowUnits,
+    meldTotalUnits,
+    totalUnits,
+    maxUnits,
+    density,
+  };
 }
 
 function claimedDiscardRemovals() {
   const removals = new Map();
   for (const claimer of state.players || []) {
     for (const meld of claimer.melds || []) {
-      if (!["chi", "peng", "ming_gang"].includes(meld.type)) continue;
+      if (!["chi", "peng", "ming_gang", "bu_gang"].includes(meld.type)) continue;
       const from = Number(meld.from);
       if (!Number.isInteger(from) || from === claimer.seat || !meld.tile) continue;
       if (!removals.has(from)) removals.set(from, { indices: new Set(), tiles: [] });
@@ -1085,6 +1996,7 @@ function saveDiscardZoneLayout(layout) {
 }
 
 function discardZonePositionStyle(key) {
+  if (!document.body.classList.contains("discard-layout-debug")) return "";
   const item = readDiscardZoneLayout()[key];
   if (!item || !Number.isFinite(item.left) || !Number.isFinite(item.top)) return "";
   return `style="left:${item.left}px;top:${item.top}px;right:auto"`;
@@ -1136,35 +2048,38 @@ function bindDiscardZoneDragging() {
 
 function renderDiscards() {
   const box = $("tableDiscards");
-  if (!box) return;
+  if (!box || !state?.players) return;
   const removals = claimedDiscardRemovals();
   const hist = state.history || [];
   let lastDiscardEvt = null;
-  for (let i = hist.length - 1; i >= 0; i--) {
+  for (let i = hist.length - 1; i >= 0; i -= 1) {
     if (hist[i].event === "discard") { lastDiscardEvt = hist[i]; break; }
   }
-  let lastDiscardSeat = -1;
-  if (lastDiscardEvt && Number.isInteger(Number(lastDiscardEvt.seat))) {
-    lastDiscardSeat = Number(lastDiscardEvt.seat);
-  } else if (lastDiscardEvt && lastDiscardEvt.message) {
-    const msg = lastDiscardEvt.message;
-    if (msg.startsWith("东")) lastDiscardSeat = 0;
-    else if (msg.startsWith("南")) lastDiscardSeat = 1;
-    else if (msg.startsWith("西")) lastDiscardSeat = 2;
-    else if (msg.startsWith("北")) lastDiscardSeat = 3;
-  }
+  const lastDiscardSeat = lastDiscardEvt && Number.isInteger(Number(lastDiscardEvt.seat))
+    ? Number(lastDiscardEvt.seat)
+    : -1;
   box.innerHTML = state.players.map((player) => {
     const visibleDiscards = visibleDiscardsFor(player, removals);
-    const lastIdx = visibleDiscards.length - 1;
-    const isLatest = lastIdx >= 0 && player.seat === lastDiscardSeat && visibleDiscards[lastIdx] === (lastDiscardEvt && lastDiscardEvt.tile);
-    const discards = visibleDiscards.map((code, idx) =>
-      tileHtml(code, "small", idx === lastIdx && isLatest ? "discard-last" : "")
+    const visibleLimit = visibleDiscards.length > BATTLE_RIVER_NORMAL_LIMIT
+      ? BATTLE_RIVER_DENSE_LIMIT
+      : BATTLE_RIVER_NORMAL_LIMIT;
+    const overflowCount = Math.max(0, visibleDiscards.length - visibleLimit);
+    const displayDiscards = overflowCount ? visibleDiscards.slice(-visibleLimit) : visibleDiscards;
+    const lastIdx = displayDiscards.length - 1;
+    const isLatest = lastIdx >= 0 && player.seat === lastDiscardSeat && displayDiscards[lastIdx] === (lastDiscardEvt && lastDiscardEvt.tile);
+    const isLiveLatest = isLatest && isLiveResponseDiscard(lastDiscardEvt);
+    const riverDense = visibleDiscards.length > BATTLE_RIVER_NORMAL_LIMIT ? " river-dense" : "";
+    const riverOverflow = overflowCount ? " river-overflow" : "";
+    const riverMode = visibleDiscards.length > BATTLE_RIVER_NORMAL_LIMIT ? "dense" : "normal";
+    const discards = displayDiscards.map((code, idx) =>
+      tileHtml(code, "small", idx === lastIdx && isLiveLatest ? "discard-last discard-live-latest" : "")
     ).join("");
     const zoneKey = seatClass(player.seat);
     return `
-      <div class="discard-zone discard-${zoneKey}" data-zone-key="${zoneKey}" ${discardZonePositionStyle(zoneKey)}>
+      <div class="discard-zone discard-${zoneKey}${riverDense}${riverOverflow}" data-zone-key="${zoneKey}" data-river-mode="${riverMode}" data-discard-count="${visibleDiscards.length}" data-visible-count="${displayDiscards.length}" data-overflow-count="${overflowCount}" ${discardZonePositionStyle(zoneKey)}>
         <span class="discard-label">${seatWind(player)}</span>
         <div class="discard-tiles">${discards || `<span class="discard-empty">暂无弃牌</span>`}</div>
+        ${overflowCount ? `<span class="discard-overflow-count">+${overflowCount}</span>` : ""}
       </div>
     `;
   }).join("");
@@ -1172,81 +2087,74 @@ function renderDiscards() {
 }
 
 function winAnimationActive() {
-  if (state?.phase !== "round_over" || state?.settlement?.winner === null || state?.settlement?.winner === undefined) {
-    lastWinAnimationKey = null;
-    lastWinAnimationStartedAt = 0;
-    return false;
-  }
-  const key = settlementKey();
-  if (!key) return false;
-  if (lastWinAnimationKey !== key) {
-    lastWinAnimationKey = key;
-    lastWinAnimationStartedAt = Date.now();
-  }
-  return Date.now() - lastWinAnimationStartedAt < 5000;
+  return state?.phase === "round_over"
+    && state?.settlement?.winner !== null
+    && state?.settlement?.winner !== undefined;
 }
 
-function isLeiziWinSettlement() {
-  const winType = String(state?.settlement?.win_type || state?.win_type || "");
-  return winType.includes("\u52a3\u5b50");
+function winnerLuckScore() {
+  const winnerSeat = Number(state?.settlement?.winner);
+  if (!Number.isInteger(winnerSeat)) return null;
+  const winner = playerBySeat(winnerSeat);
+  const rows = Array.isArray(state?.settlement?.hand_luck)
+    ? state.settlement.hand_luck
+    : [];
+  const matched = rows.find((row) => winner?.name && row?.account === winner.name)
+    || rows.find((row) => Number(row?.seat) === winnerSeat)
+    || rows[winnerSeat];
+  const value = Number(matched?.luck_percentile);
+  return Number.isFinite(value) ? value : null;
+}
+
+function usesExceptionalLuckAnimation() {
+  const luck = winnerLuckScore();
+  return luck !== null && luck >= 95;
 }
 
 function renderPlayers() {
   const winAnimating = winAnimationActive();
-  const leiziWinAnimating = winAnimating && isLeiziWinSettlement();
+  const exceptionalLuckAnimating = winAnimating && usesExceptionalLuckAnimation();
   const panels = state.players.map((player) => {
     const active = player.seat === state.current_player && state.phase !== "round_over" ? "active" : "";
     const human = player.is_human ? "human" : "";
     const winner = state.phase === "round_over" && state.settlement?.winner === player.seat ? "winning-player" : "";
-    const winActive = winner && winAnimating && !leiziWinAnimating ? "win-animating" : "";
-    const dealer = player.seat === state.dealer ? `<span class="seat-badge dealer">庄</span>` : "";
-    const turn = active ? `<span class="seat-badge turn">行牌</span>` : "";
-    const claimWarning = player.claim_warning ? `<span class="claim-warning-light" title="${escapeAttr(player.claim_warning.reason || "连续舍牌被同一人吃碰杠")}">警</span>` : "";
-    const meldRows = publicMeldRows(player.melds || []);
-    const flowers = publicFlowersFor(player).map((code) => tileHtml(code, "small")).join("");
+    const winActive = winner && winAnimating && !exceptionalLuckAnimating ? "win-animating" : "";
+    const publicStats = publicLayoutStats(player);
+    const meldRows = publicMeldRows(publicStats.melds, player.seat, publicStats.density);
+    const flowers = publicStats.flowers.map((code) => tileHtml(code, "small")).join("");
     const handTiles = seatHandTiles(player);
-    const roleLabel = player.is_human ? "你" : "AI";
+    const opponentHandState = player.is_human
+      ? ""
+      : state.phase === "round_over"
+        ? "opponent-hand-revealed"
+        : "opponent-hand-standing";
     return `
-      <article class="player-panel table-seat ${seatClass(player.seat)} ${active} ${human} ${winner} ${winActive}">
-        <div class="player-head">
-          <div class="seat-avatar">${seatWind(player)}</div>
-          <div class="seat-meta">
-            <div class="seat-name">${player.name || player.label}</div>
-            <div class="seat-badges"><span class="seat-badge role">${roleLabel}</span>${dealer}${turn}${claimWarning}</div>
-          </div>
-          <span class="chip">${player.chips}</span>
-        </div>
+      <article class="table-seat battle-seat-v7 ${seatClass(player.seat)} ${active} ${human} ${winner} ${winActive}" data-seat="${player.seat}" data-hand-state="${opponentHandState || "human"}" data-hand-count="${player.hand_count || 0}" data-flower-count="${publicStats.flowers.length}" data-meld-count="${publicStats.melds.length}" data-public-density="${publicStats.density}" style="--seat-public-units:${publicStats.maxUnits.toFixed(2)};--seat-meld-units:${publicStats.meldUnits.toFixed(2)};--seat-public-total-units:${publicStats.totalUnits.toFixed(2)};--seat-meld-total-units:${publicStats.meldTotalUnits.toFixed(2)};--seat-flower-count:${publicStats.flowers.length}">
         <div class="seat-surface">
-          ${handTiles ? `<div class="seat-tile-row concealed revealed-hand">${handTiles}</div>` : ""}
-          ${meldRows}
-          <div class="seat-tile-row flower-row" ${rowCapacityStyle(publicFlowersFor(player).length)}>${flowers}</div>
+          ${handTiles ? `<div class="seat-tile-row concealed revealed-hand ${opponentHandState}">${handTiles}</div>` : ""}
+          <div class="seat-public-zone" data-public-density="${publicStats.density}" data-public-total-units="${publicStats.totalUnits.toFixed(2)}">
+            <div class="seat-tile-row flower-row" data-row-units="${publicStats.flowers.length}" ${rowCapacityStyle(publicStats.flowers.length)}>${flowers}</div>
+            <div class="seat-public-melds">
+              ${meldRows}
+            </div>
+          </div>
         </div>
-        <div class="player-line">手牌 ${player.hand_count} · 花 ${player.flower_count}</div>
       </article>
     `;
   }).join("");
-  const cornerHeads = state.players.map((player) => {
-    const active = player.seat === state.current_player && state.phase !== "round_over" ? "active" : "";
-    const human = player.is_human ? "human" : "";
-    const dealerCorner = player.seat === state.dealer ? "dealer" : "";
-    const winner = state.phase === "round_over" && state.settlement?.winner === player.seat ? "winning-player" : "";
-    const winActive = winner && winAnimating && !leiziWinAnimating ? "win-animating" : "";
-    const claimWarning = player.claim_warning ? `<span class="claim-warning-light corner-warning" title="${escapeAttr(player.claim_warning.reason || "连续舍牌被同一人吃碰杠")}">警</span>` : "";
-    return `
-      <div class="corner-player-head corner-${seatClass(player.seat)} ${active} ${human} ${dealerCorner} ${winner} ${winActive}">
-        <span class="seat-avatar" title="${escapeAttr(player.name || player.label || "")}">${seatWind(player)}</span>
-        <span class="corner-name">${escapeXml(player.name || "")}</span>
-        <span class="chip">${player.chips}</span>
-        ${claimWarning}
-      </div>
-    `;
-  }).join("");
+  const seatActionEffectsHtml = state.players.map(seatActionEffectAnchorHtml).join("");
   const winnerBurst = winAnimating
-    ? leiziWinAnimating
-      ? `<div class="winner-burst winner-leizi-burst winner-${seatClass(state.settlement.winner)}" aria-hidden="true"><img src="${LEIZI_WIN_GIF_SRC}" alt="" /></div>`
-      : `<div class="winner-burst winner-${seatClass(state.settlement.winner)}" aria-hidden="true"><span>胡</span></div>`
+    ? exceptionalLuckAnimating
+      ? `<div class="winner-burst winner-leizi-burst winner-${seatClass(state.settlement.winner)}" data-win-animation="exceptional-luck" aria-hidden="true"><img src="${EXCEPTIONAL_LUCK_WIN_GIF_SRC}" alt="" /></div>`
+      : `<div class="winner-burst winner-${seatClass(state.settlement.winner)}" data-win-animation="normal" aria-hidden="true"><span>閼?/span></div>`
     : "";
-  $("players").innerHTML = panels + cornerHeads + winnerBurst;
+  $("players").innerHTML = panels;
+  const playerHud = $("playerHud");
+  if (playerHud) {
+    playerHud.innerHTML = seatActionEffectsHtml + winnerBurst;
+  } else {
+    $("players").insertAdjacentHTML("beforeend", seatActionEffectsHtml + winnerBurst);
+  }
   renderDiscards();
 }
 
@@ -1276,23 +2184,61 @@ function detailItemText(item, valueKey, suffix) {
   return `${item.label || ""}${value !== undefined ? ` +${value}${suffix}` : ""}`;
 }
 
+function settlementText(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
 function fallbackBaseDetails(player, score) {
   const rows = [];
   const flowers = publicFlowersFor(player);
-  if (flowers.length) rows.push(`花牌 ${flowers.map(tileLabel).join("、")} +${flowers.length * 4}和`);
+  if (flowers.length) rows.push(`花牌 ${flowers.map(tileLabel).join("、")} +${flowers.length * 4} 分`);
   for (const meld of player.melds || []) {
-    rows.push(`${meldTypeText(meld.type)} ${meld.tiles.map(tileLabel).join("、")}`);
+    rows.push(`${meldTypeText(meld.type)} ${(meld.tiles || []).map(tileLabel).join("、")}`);
   }
-  if (score?.plan?.length) rows.push(`和牌组合 ${score.plan.join("、")}`);
+  if (score?.plan?.length) rows.push(`胡牌计划 ${score.plan.join("、")}`);
   return rows;
 }
 
 function settlementDetailRows(player, score) {
-  const baseItems = (score?.base_items || []).map((item) => detailItemText(item, "points", "和"));
+  const baseItems = (score?.base_items || []).map((item) => detailItemText(item, "points", "分"));
   const fanItems = (score?.fan_items || []).map((item) => detailItemText(item, "fan", "番"));
   const base = baseItems.length ? baseItems : fallbackBaseDetails(player, score);
-  const fan = fanItems.length ? fanItems : (score?.fan ? ["旧结算未返回番种明细，后端安全重启后会显示来源。"] : ["无额外番"]);
+  const fan = fanItems.length ? fanItems : (score?.fan ? ["按结算番型计分"] : ["无额外番型"]);
   return { base, fan };
+}
+
+function settlementSeatLabel(seat) {
+  if (seat === null || seat === undefined || Number.isNaN(Number(seat))) return "";
+  return playerBySeat(Number(seat))?.label || `座位${seat}`;
+}
+
+function settlementWinBadge(settlement) {
+  const winType = settlement?.win_type || state?.win_type || "胡";
+  if (winType === "self_draw" || winType === "自摸") return "自摸";
+  if (["rob_gang", "抢杠", "抢杠胡"].includes(winType)) return "抢杠胡";
+  if (settlement?.discarder !== null && settlement?.discarder !== undefined) return "点炮胡";
+  return winType;
+}
+
+function settlementWinSummary(settlement) {
+  if (!settlement) return "查看结算";
+  if (settlement.winner === null || settlement.winner === undefined) {
+    return settlement.win_type || "流局";
+  }
+  const winnerLabel = settlementSeatLabel(settlement.winner);
+  const badge = settlementWinBadge(settlement);
+  const parts = [`${winnerLabel} ${badge}`];
+  if (settlement.discarder !== null && settlement.discarder !== undefined) {
+    parts.push(`放铳 ${settlementSeatLabel(settlement.discarder)}`);
+  }
+  if (settlement.win_tile) parts.push(`胡牌 ${tileLabel(settlement.win_tile)}`);
+  return parts.join(" · ");
 }
 
 function renderSettlementPopup() {
@@ -1311,28 +2257,37 @@ function renderSettlementPopup() {
     const score = settlement.scores?.[scoreIndex] || {};
     const details = settlementDetailRows(player, score);
     const delta = pointDeltas?.[scoreIndex] ?? 0;
+    const accountLuck = settlement.hand_luck?.find((item) => item?.account === player.name);
+    const luck = accountLuck || settlement.hand_luck?.[scoreIndex];
+    const luckScore = Number(luck?.luck_percentile);
+    const luckText = Number.isFinite(luckScore) ? `${luckScore.toFixed(1)}` : "-";
     const deltaClass = Number(delta) >= 0 ? "score-good" : "score-bad";
-    const limitReason = score.limit_reason ? `<span class="settlement-limit">${score.limit_reason}</span>` : "";
+    const isWinner = Number(settlement.winner) === scoreIndex;
+    const isDiscarder = settlement.discarder !== null && settlement.discarder !== undefined && Number(settlement.discarder) === scoreIndex;
+    const limitReason = score.limit_reason ? `<span class="settlement-limit">${settlementText(score.limit_reason)}</span>` : "";
+    const winnerBadge = isWinner ? `<span class="settlement-win-badge">${settlementText(settlementWinBadge(settlement))}</span>` : "";
+    const discarderBadge = isDiscarder ? `<span class="settlement-discarder-badge">閺€鍓у仏</span>` : "";
     return `
-      <div class="settlement-row">
+      <div class="settlement-row${isWinner ? " settlement-winner-row" : ""}${isDiscarder ? " settlement-discarder-row" : ""}">
         <div class="settlement-row-head">
-          <strong>${player.label}</strong>
-          <span>底分 ${score.base ?? "-"} 点 番 ${score.fan ?? "-"} 番 总点 ${score.total ?? "-"} ${limitReason}</span>
+          <strong>${settlementText(player.label)}${winnerBadge}${discarderBadge}</strong>
+          <span>基础 ${score.base ?? "-"} · 番 ${score.fan ?? "-"} · 总分 ${score.total ?? "-"} ${limitReason}</span>
+          <span class="settlement-luck">运气度 ${luckText}</span>
           <span class="${deltaClass}">${Number(delta) >= 0 ? "+" : ""}${delta}</span>
         </div>
-        <div class="settlement-detail"><b>牌点</b>${details.base.map((text) => `<span>${text}</span>`).join("")}</div>
-        <div class="settlement-detail"><b>番数</b>${details.fan.map((text) => `<span>${text}</span>`).join("")}</div>
+        <div class="settlement-detail"><b>基础</b>${details.base.map((text) => `<span>${settlementText(text)}</span>`).join("")}</div>
+        <div class="settlement-detail"><b>番型</b>${details.fan.map((text) => `<span>${settlementText(text)}</span>`).join("")}</div>
       </div>
     `;
   }).join("");
   const bao = settlement.bao;
   const baoBanner = bao
-    ? `<div class="settlement-bao-banner">包牌：${playerBySeat(bao.seat)?.label || `座位${bao.seat}`} · ${bao.reason || ""}</div>`
+    ? `<div class="settlement-bao-banner">包赔：${settlementText(settlementSeatLabel(bao.seat))} · ${settlementText(bao.reason || "")}</div>`
     : "";
   popup.innerHTML = `
     <div class="settlement-popup-head">
-      <strong>${settlement.win_type || state.win_type || "结算结果"}</strong>
-      <span>筹码变化 ${pointDeltas.join(" / ") || ""}</span>
+      <strong>${settlementText(settlementWinSummary(settlement))}</strong>
+      <span>筹码变化 ${settlementText(pointDeltas.join(" / ") || "")}</span>
       <button id="settlementCloseBtn" type="button">关闭</button>
     </div>
     ${baoBanner}
@@ -1408,7 +2363,12 @@ function renderPlayerStatsModal() {
       wins: row.wins,
       luck_score: row.luck_score,
     };
-    return { account: row.name, all, today: all };
+    return {
+      account: row.name,
+      all,
+      today: all,
+      room: { luck_score: row.luck_score, luck_hands: row.rounds },
+    };
   });
   const statsByAccount = new Map(normalized.map((row) => [String(row.account || ""), row]));
   const currentPlayers = (state?.players || []).slice().sort((a, b) => Number(a.seat || 0) - Number(b.seat || 0));
@@ -1431,7 +2391,7 @@ function renderPlayerStatsModal() {
   const countCell = (stats, key) => `${Number(stats?.[key] || 0)}`;
   const luckText = (stats) => {
     const value = Number(stats?.luck_score);
-    return Number.isFinite(value) ? value.toFixed(1) : "\u5f85\u5b9a";
+    return Number.isFinite(value) ? value.toFixed(1) : "-";
   };
   const pairCell = (allStats, todayStats, key, formatter = statCell) => `${formatter(allStats, key)} / ${formatter(todayStats, key)}`;
 
@@ -1440,6 +2400,7 @@ function renderPlayerStatsModal() {
       ${displayRows.map((row) => {
         const allStats = row.stats?.all || emptyStats();
         const todayStats = row.stats?.today || emptyStats();
+        const roomStats = row.stats?.room || { luck_score: null, luck_hands: 0 };
         return `
           <section class="player-stat-card">
             <div class="player-stat-summary">
@@ -1448,8 +2409,8 @@ function renderPlayerStatsModal() {
                 <span>${escapeXml(row.wind || "-")}</span>
               </div>
               <div class="player-stat-luck">
-                <span>\u8fd0\u6c14\u5ea6</span>
-                <b>${escapeXml(luckText(allStats))}</b>
+                <span>閺堫剚鍩ч梻纾嬬箥濮樻柨瀹?/span>
+                <b>${escapeXml(luckText(roomStats))}</b>
               </div>
             </div>
             <details class="player-stat-details">
@@ -1466,13 +2427,13 @@ function renderPlayerStatsModal() {
                 <span>\u6bcf\u5c40\u5f97\u724c</span><b>${pairCell(allStats, todayStats, "avg_de_draws")}</b>
                 <span>\u6bcf\u5c40\u52a0\u756a\u82b1</span><b>${pairCell(allStats, todayStats, "avg_fan_flower_draws")}</b>
               </div>
-              <div class="player-stat-luck-note">\u8fd0\u6c14\u5ea6\u7b97\u6cd5\u5f85\u8865\u5145\uff1b\u5f53\u524d\u53ea\u9884\u7559\u5165\u53e3\uff0c\u4e0d\u53c2\u4e0e\u8ba1\u7b97\u3002</div>
+              <div class="player-stat-luck-note">閹稿婀伴幋鍧楁？瀹告彃鐣幋鎰畱 ${Number(roomStats.luck_hands || 0)} 鐏炩偓閸欐牕閽╅崸鍥风幢瑜拌绨抽崗鎶芥４閹村潡妫块崥搴㈢闂嗚翰鈧?/div>
             </details>
           </section>
         `;
       }).join("")}
     </div>
-    <div class="player-stats-note">\u53ea\u663e\u793a\u5f53\u524d\u724c\u5c40\u4e2d\u7684 4 \u4e2a\u73a9\u5bb6\uff1b\u8be6\u60c5\u9879\u6309\u201c\u957f\u671f / \u4eca\u65e5\u201d\u5c55\u793a\uff0c\u7edf\u8ba1\u7ed1\u5b9a\u8d26\u53f7\u540d\u3002</div>
+    <div class="player-stats-note">閸欘亝妯夌粈鍝勭秼閸撳秶澧濈仦鈧稉顓犳畱 4 娑擃亞甯虹€硅绱辨潻鎰毜鎼达附妲搁張顒侇偧閹村潡妫挎潻鎰攽閺堢喖妫块惃鍕礋鐏炩偓楠炲啿娼庨敍灞藉従娴犳牞顕涢幆鍛瘻閳ユ粓鏆遍張?/ 娴犲﹥妫╅垾婵嗙潔缁€鎭掆偓?/div>
   `;
 }
 
@@ -1481,9 +2442,6 @@ function renderActions() {
   const bar = $("actionBar");
   bar.innerHTML = "";
   if (state.phase === "round_over") {
-    const text = state.settlement?.winner === null
-      ? `黄牌：${state.settlement?.reason || ""}`
-      : `${playerBySeat(state.winner)?.label || ""} ${state.win_type}`;
     if (state.settlement) {
       const button = document.createElement("button");
       button.className = settlementHidden() ? "settlement-toggle" : "settlement-toggle gold";
@@ -1494,15 +2452,13 @@ function renderActions() {
     const nextButton = document.createElement("button");
     const ready = APP_MODE === "battle" && state?.ready_accounts?.includes(battleAccountValue());
     nextButton.className = APP_MODE === "battle" ? (ready ? "ready-toggle ready-off" : "ready-toggle gold") : "primary";
-    nextButton.textContent = APP_MODE === "battle" ? (ready ? "已准备" : "准备") : "下一局";
+    nextButton.textContent = APP_MODE === "battle" ? (ready ? "已准备" : "准备") : "新一局";
     nextButton.addEventListener("click", () => newRound(false));
     bar.appendChild(nextButton);
     return;
   }
   if (!legal.length) {
-    if (state.pending?.deferred) {
-      return;
-    }
+    if (state.pending?.deferred) return;
     bar.innerHTML = `<span class="tag">${phaseText(state.phase)}</span>`;
     return;
   }
@@ -1517,7 +2473,7 @@ function renderActions() {
   if (legal.some((action) => action.type === "discard")) {
     const span = document.createElement("span");
     span.className = "tag";
-    span.textContent = "请选择出牌";
+    span.textContent = "请选择要出的牌";
     bar.appendChild(span);
   }
 }
@@ -1559,18 +2515,20 @@ function renderActionsV2() {
   const legal = state.legal_actions || [];
   const bar = $("actionBar");
   bar.innerHTML = "";
+  if (transientActionNotice) {
+    bar.innerHTML = `<span class="tag action-feedback">${escapeXml(transientActionNotice)}</span>`;
+    return;
+  }
   if (pendingActionFeedback) {
     bar.innerHTML = `<span class="tag action-feedback">${escapeXml(pendingActionFeedback.message)}</span>`;
     return;
   }
   if (state.phase === "round_over") {
-    const text = state.settlement?.winner === null
-      ? `榛勭墝锛?{state.settlement?.reason || ""}`
-      : `${playerBySeat(state.winner)?.label || ""} ${state.win_type}`;
     if (state.settlement) {
       const button = document.createElement("button");
       button.className = settlementHidden() ? "settlement-toggle" : "settlement-toggle gold";
       button.textContent = "结算";
+      button.title = settlementWinSummary(state.settlement);
       button.addEventListener("click", toggleSettlementPopup);
       bar.appendChild(button);
     }
@@ -1600,18 +2558,45 @@ function renderActionsV2() {
     bar.appendChild(button);
   }
   if (legal.some((action) => action.type === "discard")) {
-    if (selectedDiscardTile) {
-      const button = document.createElement("button");
-      button.className = "discard-confirm";
-      button.textContent = "出";
-      button.addEventListener("click", () => sendAction({ type: "discard", tile: selectedDiscardTile }));
-      bar.appendChild(button);
-    } else {
-      const span = document.createElement("span");
-      span.className = "tag";
-      span.textContent = "请选择一张手牌";
-      bar.appendChild(span);
-    }
+    const span = document.createElement("span");
+    span.className = "tag";
+    span.textContent = "双击出牌";
+    bar.appendChild(span);
+  }
+}
+
+function fitActiveHand(count, options = {}) {
+  const table = document.querySelector(".mahjong-table");
+  if (!table || !count) return;
+  const handRow = $("hand");
+  const tableLogicalWidth = Number(table.clientWidth) || BATTLE_MOBILE_LOGICAL_WIDTH;
+  const frameInset = 8;
+  const handFrameWidth = Math.max(1, tableLogicalWidth - frameInset * 2);
+  const maxHandTiles = 17;
+  const fixedTileGap = 2;
+  const drawGapRatio = 0.15;
+  const fixedTileW = Math.max(
+    1,
+    (handFrameWidth - ((maxHandTiles - 2) * fixedTileGap))
+      / (maxHandTiles + drawGapRatio)
+  );
+  const hasNewDraw = options.hasNewDraw ?? Boolean($("hand")?.querySelector(".new-draw"));
+  const drawGap = hasNewDraw ? Math.round(fixedTileW * drawGapRatio) : 0;
+  const contentWidth = handFrameWidth;
+  const leftReserve = 0;
+  const rightReserve = 0;
+  table.style.setProperty("--active-hand-safe-width", `${contentWidth.toFixed(2)}px`);
+  table.style.setProperty("--active-left-public-w", `${leftReserve.toFixed(2)}px`);
+  table.style.setProperty("--active-right-public-w", `${rightReserve.toFixed(2)}px`);
+  table.style.setProperty("--active-tile-w", `${fixedTileW.toFixed(2)}px`);
+  table.style.setProperty("--active-tile-h", `${(fixedTileW * 1.40625).toFixed(2)}px`);
+  table.style.setProperty("--active-tile-gap", `${fixedTileGap.toFixed(2)}px`);
+  table.style.setProperty("--active-draw-gap", `${drawGap.toFixed(2)}px`);
+  table.dataset.activeHandSizing = "fixed-17-frame";
+  if (handRow) {
+    setImportantStyle(handRow, "justify-content", "center");
+    setImportantStyle(handRow, "overflow-x", "visible");
+    setImportantStyle(handRow, "overflow-y", "visible");
   }
 }
 
@@ -1622,6 +2607,7 @@ function renderHandV2() {
     if (hand) hand.innerHTML = "";
     selectedDiscardTile = null;
     selectedDiscardKey = null;
+    updateSelectedTileHighlights();
     renderActionsV2();
     return;
   }
@@ -1629,10 +2615,16 @@ function renderHandV2() {
   const legalDiscards = legalDiscardTiles();
   syncSelectedDiscardTile();
   const { tiles, drawnTile } = displayedHandTiles(human);
+  fitActiveHand(tiles.length, { human, hasNewDraw: Boolean(drawnTile) });
   const validSelectionKeys = new Set(tiles.map((code, index) => `${code}:${index}`));
   if (selectedDiscardKey && !validSelectionKeys.has(selectedDiscardKey)) {
-    selectedDiscardKey = null;
-    selectedDiscardTile = null;
+    const replacementIndex = tiles.findIndex((code) => code === selectedDiscardTile);
+    if (replacementIndex >= 0 && legalDiscards.has(selectedDiscardTile)) {
+      selectedDiscardKey = `${selectedDiscardTile}:${replacementIndex}`;
+    } else {
+      selectedDiscardKey = null;
+      selectedDiscardTile = null;
+    }
   }
   $("hand").innerHTML = tiles.map((code, index) => {
     const discardable = canDiscardNow && legalDiscards.has(code) ? "discardable" : "";
@@ -1645,13 +2637,20 @@ function renderHandV2() {
   $("hand").querySelectorAll(".discardable").forEach((el) => {
     el.addEventListener("click", () => {
       const key = el.dataset.handKey || "";
-      const same = selectedDiscardKey === key;
-      selectedDiscardTile = same ? null : el.dataset.tile;
-      selectedDiscardKey = same ? null : key;
+      const tile = el.dataset.tile;
+      const same = selectedDiscardTile === tile;
+      if (same) {
+        sendAction({ type: "discard", tile });
+        return;
+      }
+      selectedDiscardTile = tile;
+      selectedDiscardKey = key;
       renderActionsV2();
       renderHandV2();
+      updateSelectedTileHighlights();
     });
   });
+  updateSelectedTileHighlights();
 }
 
 function renderAnalysis() {
@@ -1661,22 +2660,22 @@ function renderAnalysis() {
   const pointDeltas = settlement?.point_deltas || settlement?.deltas || [];
   const header = settlement ? `
     <div class="analysis-item">
-      <div><strong>${settlement.win_type}</strong>${settlement.reason ? ` · ${settlement.reason}` : ""}</div>
-      <div>筹码变化：${pointDeltas.join(" / ") || ""}</div>
+      <div><strong>${escapeXml(settlement.win_type || "结算")}</strong>${settlement.reason ? ` · ${escapeXml(settlement.reason)}` : ""}</div>
+      <div>筹码变化：${escapeXml(pointDeltas.join(" / ") || "")}</div>
     </div>
   ` : "";
   const rows = (state.analysis || []).slice().reverse().map((item) => {
     const cls = item.bad ? "score-bad" : "score-good";
     return `
       <div class="analysis-item">
-        <div class="${cls}">${item.score} 分 · ${item.chosen}</div>
-        <div>模型首选：${item.best || "无"}（${item.best_score ?? "-"}）</div>
-        <div>${item.reason}</div>
-        <div>${item.suggestion}</div>
+        <div class="${cls}">${escapeXml(item.score)} 分 · ${escapeXml(item.chosen)}</div>
+        <div>模型首选：${escapeXml(item.best || "无")}，${escapeXml(item.best_score ?? "-")}</div>
+        <div>${escapeXml(item.reason || "")}</div>
+        <div>${escapeXml(item.suggestion || "")}</div>
       </div>
     `;
   }).join("");
-  box.innerHTML = header + (rows || `<div class="analysis-item">暂无人类决策记录。</div>`);
+  box.innerHTML = header + (rows || `<div class="analysis-item">暂无决策记录。</div>`);
 }
 function render() {
   if (activeView === "game" && renderBattleLobbyOnly()) return;
@@ -1685,18 +2684,20 @@ function render() {
   renderPendingCountdown();
   renderBattleFocus();
   renderPlayers();
+  renderTableCanvas();
   renderActionsV2();
   renderHandV2();
   renderHistory();
   renderAnalysis();
   renderSettlementPopup();
   renderPlayerStatsModal();
+  updateSelectedTileHighlights();
   updateBattleToolbarControls();
 }
 
 async function refresh() {
   const path = APP_MODE === "battle" || activeView === "game"
-    ? `/api/battle/state${battleQuery()}`
+    ? battleApiPath("state")
     : "/api/state";
   if (setGameState(await api(path), { announce: false, force: true })) render();
 }
@@ -1706,7 +2707,7 @@ async function stepGame() {
   steppingGame = true;
   try {
     const path = APP_MODE === "battle" || activeView === "game"
-      ? `/api/battle/step${battleQuery()}`
+      ? battleApiPath("state")
       : "/api/step";
     if (setGameState(await api(path))) render();
   } finally {
@@ -1718,7 +2719,7 @@ async function refreshBattleState() {
   if (APP_MODE !== "battle" || refreshingGame || steppingGame || resolvingPending) return;
   refreshingGame = true;
   try {
-    if (setGameState(await api(`/api/battle/state${battleQuery()}`), { announce: false })) render();
+    if (setGameState(await api(battleApiPath("state")), { announce: false })) render();
   } finally {
     refreshingGame = false;
   }
@@ -1736,11 +2737,11 @@ async function waitBattleStateOnce() {
   refreshingGame = true;
   try {
     const since = Number.isFinite(Number(state?.room_revision)) ? Number(state.room_revision) : null;
-    const result = await api(`/api/battle/wait${battleWaitQuery(since)}`);
+    const result = await api(`${battleApiPath("wait")}${battleWaitQuery(since)}`);
     if (setGameState(result, { announce: true })) render();
   } catch (error) {
     console.warn("battle wait failed", error);
-    await delay(1000);
+    await delay(300);
     await refreshBattleState();
   } finally {
     refreshingGame = false;
@@ -1754,7 +2755,7 @@ async function startBattleWaitLoop() {
     if (shouldAutoStepGame()) {
       await waitBattleStateOnce();
     } else {
-      await delay(500);
+      await delay(180);
     }
   }
 }
@@ -1763,7 +2764,7 @@ async function sendBattleHeartbeat() {
   const account = battleAccountValue();
   if (!account || !Number.isInteger(Number(state?.room_generation))) return;
   try {
-    await post("/api/battle/heartbeat", { account });
+    await post(battleApiPath("heartbeat"), { account });
   } catch (error) {
     console.warn("battle heartbeat failed", error);
   }
@@ -1795,35 +2796,72 @@ async function sendAction(action) {
   clearPendingTimers();
   busy = true;
   setBusy(true);
-  pendingActionFeedback = {
-    action,
-    room_generation: state?.room_generation,
-    pending_id: state?.pending_id,
-    action_token: state?.action_token || null,
-    message: `已提交 ${actionFeedbackLabel(action)}，等待服务器确认`
-  };
-  renderActionsV2();
-  renderHandV2();
   try {
-    const path = APP_MODE === "battle" || activeView === "game" ? "/api/battle/action" : "/api/action";
-    const payload = path.includes("/battle/")
-      ? {
-          account: battleAccountValue(),
-          action,
-          action_token: state?.action_token || null,
-          room_generation: state?.room_generation ?? null,
-          pending_id: state?.pending_id ?? null
+    const path = APP_MODE === "battle" || activeView === "game" ? battleApiPath("action") : "/api/action";
+    const battlePath = path.includes("/battle/");
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (battlePath && attempt > 0) {
+        try {
+          await refresh();
+        } catch (refreshError) {
+          console.warn("battle stale refresh failed", refreshError);
         }
-      : { action };
-    const next = await post(path, payload);
-    pendingActionFeedback = null;
-    setGameState(next);
-    render();
+      }
+      const currentAction = battlePath ? currentLegalActionForIntent(action) : action;
+      if (!currentAction) {
+        pendingActionFeedback = null;
+        showTransientActionNotice("牌局已更新，请按当前画面重新选择动作");
+        return;
+      }
+      pendingActionFeedback = {
+        action: currentAction,
+        room_generation: state?.room_generation,
+        pending_id: state?.pending_id,
+        action_token: state?.action_token || null,
+        message: `已提交 ${actionFeedbackLabel(currentAction)}，等待服务器确认`,
+      };
+      renderActionsV2();
+      renderHandV2();
+      try {
+        const payload = battlePath
+          ? {
+              account: battleAccountValue(),
+              action: currentAction,
+              action_token: state?.action_token || null,
+              room_generation: state?.room_generation ?? null,
+              pending_id: state?.pending_id ?? null,
+            }
+          : { action: currentAction };
+        const next = await post(path, payload);
+        pendingActionFeedback = null;
+        setGameState(next);
+        render();
+        return;
+      } catch (error) {
+        lastError = error;
+        pendingActionFeedback = null;
+        if (!battlePath || !isStaleBattleActionError(error) || attempt > 0) {
+          throw error;
+        }
+        console.warn("battle action stale; refreshing and retrying current action", error);
+      }
+    }
+    if (lastError) throw lastError;
   } catch (error) {
     pendingActionFeedback = null;
-    renderActionsV2();
-    renderHandV2();
-    alert(error.message);
+    if (isStaleBattleActionError(error)) {
+      showTransientActionNotice("牌局已更新，请按当前画面重新选择动作");
+      try {
+        await refresh();
+      } catch (refreshError) {
+        console.warn("battle stale refresh failed", refreshError);
+      }
+    } else {
+      renderActionsV2();
+      renderHandV2();
+      alert(error.message);
+    }
   } finally {
     busy = false;
     setBusy(false);
@@ -1834,35 +2872,7 @@ async function sendAction(action) {
 }
 
 async function loginBattleAccount(account) {
-  const name = String(account || "").trim();
-  if (!name) {
-    alert("请输入账号名");
-    return;
-  }
-  try {
-    const result = await post("/api/battle/login", { account: name });
-    saveBattleAccount(result.account || name);
-    setGameState(await api(`/api/battle/state${battleQuery()}`), { announce: false });
-    render();
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function registerBattleAccount(account) {
-  const name = String(account || "").trim();
-  if (!name) {
-    alert("请输入账号名");
-    return;
-  }
-  try {
-    const result = await post("/api/battle/register", { account: name });
-    saveBattleAccount(result.account || name);
-    setGameState(await api(`/api/battle/state${battleQuery()}`), { announce: false });
-    render();
-  } catch (error) {
-    alert(error.message);
-  }
+  redirectToBattleLobby("请先在大厅登录并进入房间。");
 }
 
 async function sitBattleSeat(seat) {
@@ -1871,7 +2881,7 @@ async function sitBattleSeat(seat) {
     return;
   }
   try {
-    setGameState(await post("/api/battle/sit", { account: battleAccountValue(), seat }), { announce: false });
+    setGameState(await post(battleApiPath("sit"), { account: battleAccountValue(), seat }), { announce: false });
     render();
   } catch (error) {
     alert(error.message);
@@ -1881,7 +2891,7 @@ async function sitBattleSeat(seat) {
 async function leaveBattleSeat() {
   if (!battleAccountValue()) return;
   try {
-    setGameState(await post("/api/battle/leave", { account: battleAccountValue() }), { announce: false });
+    setGameState(await post(battleApiPath("leave"), { account: battleAccountValue() }), { announce: false });
     render();
   } catch (error) {
     alert(error.message);
@@ -1894,7 +2904,13 @@ function setRoomMenuOpen(open) {
   const button = $("roomMenuBtn");
   if (panel) panel.hidden = !roomMenuOpen;
   if (button) button.setAttribute("aria-expanded", roomMenuOpen ? "true" : "false");
+  renderOwnerRoomControls();
   renderRoomDiagnostics();
+  if (roomMenuOpen) {
+    refreshBattleRoomSummary()
+      .then(() => renderOwnerRoomControls())
+      .catch((error) => console.warn("room summary refresh failed", error));
+  }
 }
 
 function toggleRoomMenu() {
@@ -1906,7 +2922,7 @@ async function exitBattleRoom() {
   setRoomMenuOpen(false);
   if (account) {
     try {
-      await post("/api/battle/leave", { account });
+      await post(battleApiPath("leave"), { account });
     } catch (error) {
       console.warn("leave battle room skipped", error);
     }
@@ -1924,6 +2940,15 @@ function recordBattleClientError(kind, value) {
 }
 
 function bugReportClientContext() {
+  const navigationEntries = typeof performance !== "undefined" && performance.getEntriesByType
+    ? performance.getEntriesByType("navigation").slice(-1).map((entry) => ({
+        type: entry.type,
+        duration: Math.round(entry.duration || 0),
+        dom_complete: Math.round(entry.domComplete || 0),
+        load_event_end: Math.round(entry.loadEventEnd || 0),
+        transfer_size: Math.round(entry.transferSize || 0),
+      }))
+    : [];
   return {
     url: window.location.href,
     user_agent: navigator.userAgent,
@@ -1935,6 +2960,15 @@ function bugReportClientContext() {
       visual_height: window.visualViewport?.height ?? null,
       device_pixel_ratio: window.devicePixelRatio,
       orientation: screen.orientation?.type || null,
+    },
+    performance: {
+      now: typeof performance !== "undefined" ? Math.round(performance.now()) : null,
+      navigation: navigationEntries,
+      memory: (typeof performance !== "undefined" && performance.memory) ? {
+        js_heap_size_limit: performance.memory.jsHeapSizeLimit,
+        total_js_heap_size: performance.memory.totalJSHeapSize,
+        used_js_heap_size: performance.memory.usedJSHeapSize,
+      } : null,
     },
     document_visibility: document.visibilityState,
     state: {
@@ -1948,7 +2982,7 @@ function bugReportClientContext() {
       pending_kind: state?.pending?.kind ?? null,
       wall_remaining: state?.wall_remaining ?? null,
     },
-    recent_api_timings: recentBattleApiTimings.slice(-20),
+    recent_api_timings: recentBattleApiTimings.slice(-60),
     recent_client_errors: recentBattleClientErrors.slice(-20),
   };
 }
@@ -1961,7 +2995,7 @@ function setBugReportModalOpen(open) {
     setRoomMenuOpen(false);
     if ($("bugReportRoundMeta")) {
       const roundState = state?.phase === "round_over" ? "已结束" : "进行中";
-      $("bugReportRoundMeta").textContent = `当前第 ${state?.round_no ?? "-"} 局 · ${roundState}`;
+      $("bugReportRoundMeta").textContent = `第 ${state?.round_no ?? "-"} 局 · ${roundState}`;
     }
     if ($("bugReportModalStatus")) $("bugReportModalStatus").textContent = "";
     window.setTimeout(() => $("bugReportNote")?.focus(), 0);
@@ -1981,16 +3015,18 @@ async function reportBattleBug(event) {
   const modalStatus = $("bugReportModalStatus");
   busy = true;
   setBusy(true);
-  if (status) status.textContent = "正在保存完整牌局信息…";
-  if (modalStatus) modalStatus.textContent = "正在保存完整牌局信息…";
+  if (status) status.textContent = "正在保存完整牌局信息...";
+  if (modalStatus) modalStatus.textContent = "正在保存完整牌局信息...";
   try {
-    const result = await post("/api/battle/report-bug", {
+    const result = await post(battleApiPath("report-bug"), {
       account: battleAccountValue(),
       note,
       client_context: bugReportClientContext(),
     });
-    if (status) status.textContent = `已保存，编号 ${result.report_id}`;
-    if (modalStatus) modalStatus.textContent = `已保存，编号 ${result.report_id}`;
+    const reportPath = result.export_path || result.file_path || result.file_name || "";
+    const savedText = `已保存，编号 ${result.report_id}${reportPath ? `，文件 ${reportPath}` : ""}`;
+    if (status) status.textContent = savedText;
+    if (modalStatus) modalStatus.textContent = savedText;
     if ($("bugReportNote")) $("bugReportNote").value = "";
     window.setTimeout(() => setBugReportModalOpen(false), 700);
   } catch (error) {
@@ -2010,11 +3046,153 @@ async function readyBattleAccount() {
     return;
   }
   try {
-    saveBattleAiPolicy();
-    setGameState(await post("/api/battle/ready", { account: battleAccountValue() }), { announce: false });
+    const aiPolicy = saveBattleAiPolicy();
+    setGameState(await post(battleApiPath("ready"), { account: battleAccountValue(), ai_policy: aiPolicy }), { announce: false });
     render();
   } catch (error) {
     alert(error.message);
+  }
+}
+
+function isBattleRoomOwner() {
+  const metadata = battleRoomMetadata();
+  return Boolean(battleAccountValue() && metadata.owner_account && metadata.owner_account === battleAccountValue());
+}
+
+function isBattleActivePlay() {
+  return Boolean(state?.game_started && state?.phase !== "round_over");
+}
+
+function setOwnerRoomMessage(message, bad = false) {
+  const box = $("ownerRoomMessage");
+  if (!box) return;
+  box.textContent = message || "";
+  box.classList.toggle("bad", Boolean(bad));
+}
+
+function ownerKickTargets() {
+  const metadata = battleRoomMetadata();
+  const owner = metadata.owner_account;
+  return (metadata.seats || [])
+    .map((seat) => ({
+      account: String(seat?.account || "").trim(),
+      label: `${seatName(Number(seat?.seat ?? seat?.absolute_seat ?? 0))} · ${seat?.account || ""}`,
+      isAi: Boolean(seat?.is_ai),
+    }))
+    .filter((seat) => seat.account && seat.account !== owner && !seat.isAi);
+}
+
+function renderOwnerRoomControls() {
+  const controls = $("ownerRoomControls");
+  if (!controls) return;
+  const owner = isBattleRoomOwner();
+  controls.hidden = !owner;
+  if (!owner) return;
+  const metadata = battleRoomMetadata();
+  const activePlay = isBattleActivePlay();
+  const settingsBlock = $("ownerRoomSettingsBlock");
+  const kickBlock = $("ownerRoomKickBlock");
+  const aiSelect = $("ownerAiPolicySelect");
+  const applyButton = $("ownerApplySettingsBtn");
+  const kickSelect = $("ownerKickTargetSelect");
+  const kickButton = $("ownerKickBtn");
+  const closeButton = $("ownerCloseRoomBtn");
+  if (settingsBlock) settingsBlock.hidden = activePlay;
+  if (kickBlock) kickBlock.hidden = activePlay;
+  if (aiSelect) aiSelect.value = normalizeBattleAiPolicy(metadata.ai_policy);
+  if (applyButton) {
+    applyButton.disabled = busy || activePlay;
+    applyButton.title = activePlay ? "对局进行中不能修改 AI 设置" : "应用房间 AI 设置";
+  }
+  const targets = ownerKickTargets();
+  if (kickSelect) {
+    kickSelect.innerHTML = targets.length
+      ? targets.map((target) => `<option value="${escapeAttr(target.account)}">${escapeXml(target.label)}</option>`).join("")
+      : '<option value="">暂无可踢出的玩家</option>';
+  }
+  if (kickButton) {
+    kickButton.disabled = busy || activePlay || !targets.length;
+    kickButton.title = activePlay ? "对局进行中不能踢人" : "";
+  }
+  if (closeButton) {
+    closeButton.disabled = busy;
+    closeButton.title = "关闭整个房间";
+  }
+}
+
+async function ownerApplyRoomSettings() {
+  if (!isBattleRoomOwner() || isBattleActivePlay() || busy) return;
+  const roomId = battleRoomIdValue();
+  const aiPolicy = normalizeBattleAiPolicy($("ownerAiPolicySelect")?.value || DEFAULT_BATTLE_AI_POLICY);
+  busy = true;
+  setBusy(true);
+  setOwnerRoomMessage("正在应用设置...");
+  try {
+    const summary = await post(`/api/lobby/rooms/${encodeURIComponent(roomId)}/settings`, { ai_policy: aiPolicy });
+    saveBattleRoomSummary(summary);
+    await refreshBattleRoomSummary();
+    await refreshBattleState();
+    setOwnerRoomMessage("AI 设置已更新。");
+  } catch (error) {
+    setOwnerRoomMessage(error.message, true);
+  } finally {
+    busy = false;
+    setBusy(false);
+    renderOwnerRoomControls();
+  }
+}
+
+async function ownerKickRoomPlayer() {
+  if (!isBattleRoomOwner() || isBattleActivePlay() || busy) return;
+  const target = $("ownerKickTargetSelect")?.value || "";
+  if (!target) return;
+  if (!window.confirm(`确认将 ${target} 踢出房间？`)) return;
+  const roomId = battleRoomIdValue();
+  busy = true;
+  setBusy(true);
+  setOwnerRoomMessage("正在踢出玩家...");
+  try {
+    const result = await post(`/api/lobby/rooms/${encodeURIComponent(roomId)}/kick`, {
+      target,
+      room_generation: state?.room_generation,
+    });
+    setGameState(result, { announce: false });
+    await refreshBattleRoomSummary();
+    await refreshBattleState();
+    render();
+    setOwnerRoomMessage(`${target} 已离开房间。`);
+  } catch (error) {
+    setOwnerRoomMessage(error.message, true);
+  } finally {
+    busy = false;
+    setBusy(false);
+    renderOwnerRoomControls();
+  }
+}
+
+async function ownerCloseBattleRoom() {
+  if (!isBattleRoomOwner() || busy) return;
+  if (!window.confirm("确认关闭整个房间？")) return;
+  if (!window.confirm("关闭后本局作废，所有玩家会回到大厅。继续关闭？")) return;
+  const roomId = battleRoomIdValue();
+  busy = true;
+  setBusy(true);
+  setOwnerRoomMessage("正在关闭房间...");
+  try {
+    await post(`/api/lobby/rooms/${encodeURIComponent(roomId)}/close`, { confirm: "CLOSE_ROOM" });
+    try {
+      localStorage.removeItem(BATTLE_ROOM_STORAGE_KEY);
+      localStorage.removeItem(BATTLE_ROOM_SUMMARY_STORAGE_KEY);
+    } catch {
+      // Local storage can be unavailable in hardened browser profiles.
+    }
+    redirectToBattleLobby("房间已关闭。");
+  } catch (error) {
+    setOwnerRoomMessage(error.message, true);
+  } finally {
+    busy = false;
+    setBusy(false);
+    renderOwnerRoomControls();
   }
 }
 
@@ -2027,6 +3205,7 @@ function setBusy(value) {
   document.querySelectorAll("#actionBar button").forEach((button) => {
     button.disabled = value;
   });
+  renderOwnerRoomControls();
 }
 
 function updateBattleToolbarControls() {
@@ -2040,15 +3219,16 @@ function updateBattleToolbarControls() {
   if (menu) menu.hidden = false;
   if (exitButton) exitButton.disabled = busy;
   if (bugReportButton) {
-    bugReportButton.disabled = busy || !state?.game_started || state?.bug_report?.available === false;
-    bugReportButton.title = bugReportButton.disabled ? "当前没有可举报的牌局" : "保存当前牌局的完整诊断信息";
+    bugReportButton.disabled = busy || !state?.game_started;
+    bugReportButton.title = bugReportButton.disabled ? "当前没有可举报的牌局" : "保存当前牌局的诊断信息";
   }
   if (resetButton) {
     resetButton.hidden = false;
-    resetButton.textContent = "重置房间";
+    resetButton.textContent = "重新换座";
     resetButton.disabled = busy || state?.phase !== "round_over";
-    resetButton.title = resetButton.disabled ? "本局结束后才能重置房间座次" : "随机重排当前人类玩家座次";
+    resetButton.title = resetButton.disabled ? "本局结算后才能重新换座" : "随机重排所有玩家座位";
   }
+  renderOwnerRoomControls();
   renderRoomDiagnostics();
 }
 
@@ -2091,15 +3271,14 @@ function renderRoomDiagnostics() {
   `;
 }
 
-async function newRound(reset = false) {
+async function newRound() {
   if (busy) return;
   setRoomMenuOpen(false);
   busy = true;
   setBusy(true);
   try {
-    saveBattleAiPolicy();
-    const endpoint = reset ? "/api/battle/reset" : "/api/battle/ready";
-    setGameState(await post(endpoint, { account: battleAccountValue() }), { announce: false });
+    const aiPolicy = saveBattleAiPolicy();
+    setGameState(await post(battleApiPath("ready"), { account: battleAccountValue(), ai_policy: aiPolicy }), { announce: false });
     render();
   } catch (error) {
     alert(error.message);
@@ -2111,6 +3290,24 @@ async function newRound(reset = false) {
     updateBattleToolbarControls();
   }
 }
+
+async function reseatPlayers() {
+  if (busy || state?.phase !== "round_over") return;
+  setRoomMenuOpen(false);
+  busy = true;
+  setBusy(true);
+  try {
+    setGameState(await post(battleApiPath("reset"), {}), { announce: false });
+    render();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    busy = false;
+    setBusy(false);
+    updateBattleToolbarControls();
+  }
+}
+
 function applyAppMode() {
   document.body.classList.add("battle-app-mode");
   activeView = "game";
@@ -2120,11 +3317,11 @@ function applyAppMode() {
   if ($("shuffleSeatsBtn")) $("shuffleSeatsBtn").hidden = true;
   if ($("newRoundBtn")) $("newRoundBtn").hidden = true;
   if ($("newRoundBtn")) $("newRoundBtn").textContent = "准备";
-  if ($("resetMatchBtn")) $("resetMatchBtn").textContent = "重置房间";
+  if ($("resetMatchBtn")) $("resetMatchBtn").textContent = "重新换座";
   updateBattleToolbarControls();
   if ($("trainingView")) $("trainingView").classList.remove("active");
   if ($("gameView")) $("gameView").classList.add("active");
-  if ($("roundMeta")) $("roundMeta").textContent = "人机对战";
+  if ($("roundMeta")) $("roundMeta").textContent = "在线房间";
 }
 function syncBattleMobileViewport() {
   if (APP_MODE !== "battle") return;
@@ -2136,16 +3333,49 @@ function syncBattleMobileViewport() {
   const mobile = coarse || smallViewport;
   document.body.classList.toggle("battle-mobile-table", mobile);
   if (!mobile) {
+    const desktopW = Math.max(1, Math.round(rawW));
+    const desktopH = Math.max(1, Math.round(rawH));
+    const desktopInset = 16;
+    const availableW = Math.max(1, desktopW - desktopInset * 2);
+    const availableH = Math.max(1, desktopH - desktopInset * 2);
+    const widthScale = Math.max(0.1, availableW / BATTLE_MOBILE_LOGICAL_WIDTH);
+    const heightFitScale = Math.max(0.1, availableH / BATTLE_TABLE_BASE_HEIGHT);
+    const desktopScale = Math.min(widthScale, heightFitScale);
+    const desktopLogicalHeight = Math.max(
+      BATTLE_TABLE_BASE_HEIGHT,
+      Math.round((availableH / desktopScale) * 100) / 100
+    );
+    document.body.classList.add("battle-desktop-table");
     document.body.classList.remove("battle-mobile-portrait");
+    document.documentElement.style.setProperty("--battle-desktop-scale", desktopScale.toFixed(4));
+    document.documentElement.style.setProperty("--battle-desktop-table-w", `${BATTLE_MOBILE_LOGICAL_WIDTH}px`);
+    document.documentElement.style.setProperty("--battle-desktop-table-h", `${desktopLogicalHeight}px`);
+    document.documentElement.style.setProperty("--battle-desktop-content-h", `${BATTLE_TABLE_BASE_HEIGHT}px`);
+    document.documentElement.style.setProperty("--battle-desktop-available-w", `${availableW}px`);
+    document.documentElement.style.setProperty("--battle-desktop-available-h", `${availableH}px`);
+    document.documentElement.style.setProperty("--battle-desktop-vw", `${desktopW}px`);
+    document.documentElement.style.setProperty("--battle-desktop-vh", `${desktopH}px`);
     document.documentElement.style.removeProperty("--battle-mobile-scale");
     document.documentElement.style.removeProperty("--battle-mobile-table-w");
     document.documentElement.style.removeProperty("--battle-mobile-table-h");
+    document.documentElement.style.removeProperty("--battle-mobile-content-h");
     document.documentElement.style.removeProperty("--battle-mobile-vw");
     document.documentElement.style.removeProperty("--battle-mobile-vh");
     document.documentElement.style.removeProperty("--battle-mobile-shell-w");
     document.documentElement.style.removeProperty("--battle-mobile-shell-h");
+    fitActiveHand(document.querySelectorAll("#hand .tile").length);
+    renderTableCanvas();
     return;
   }
+  document.body.classList.remove("battle-desktop-table");
+  document.documentElement.style.removeProperty("--battle-desktop-scale");
+  document.documentElement.style.removeProperty("--battle-desktop-table-w");
+  document.documentElement.style.removeProperty("--battle-desktop-table-h");
+  document.documentElement.style.removeProperty("--battle-desktop-content-h");
+  document.documentElement.style.removeProperty("--battle-desktop-available-w");
+  document.documentElement.style.removeProperty("--battle-desktop-available-h");
+  document.documentElement.style.removeProperty("--battle-desktop-vw");
+  document.documentElement.style.removeProperty("--battle-desktop-vh");
 
   const visualW = Math.max(1, Math.round(rawW));
   const visualH = Math.max(1, Math.round(rawH));
@@ -2153,19 +3383,23 @@ function syncBattleMobileViewport() {
   document.body.classList.toggle("battle-mobile-portrait", portrait);
   const viewportW = portrait ? visualH : visualW;
   const viewportH = portrait ? visualW : visualH;
-  let scale = viewportW / BATTLE_MOBILE_LOGICAL_WIDTH;
-  let logicalH = viewportH / scale;
-  if (logicalH < BATTLE_MOBILE_MIN_LOGICAL_HEIGHT) {
-    logicalH = BATTLE_MOBILE_MIN_LOGICAL_HEIGHT;
-    scale = viewportH / logicalH;
-  }
+  const widthScale = Math.max(0.1, viewportW / BATTLE_MOBILE_LOGICAL_WIDTH);
+  const heightFitScale = Math.max(0.1, viewportH / BATTLE_TABLE_BASE_HEIGHT);
+  const scale = Math.min(widthScale, heightFitScale);
+  const logicalH = Math.max(
+    BATTLE_TABLE_BASE_HEIGHT,
+    Math.round((viewportH / scale) * 100) / 100
+  );
   document.documentElement.style.setProperty("--battle-mobile-scale", Math.max(0.1, scale).toFixed(4));
   document.documentElement.style.setProperty("--battle-mobile-table-w", `${BATTLE_MOBILE_LOGICAL_WIDTH}px`);
-  document.documentElement.style.setProperty("--battle-mobile-table-h", `${Math.round(logicalH)}px`);
+  document.documentElement.style.setProperty("--battle-mobile-table-h", `${logicalH}px`);
+  document.documentElement.style.setProperty("--battle-mobile-content-h", `${BATTLE_TABLE_BASE_HEIGHT}px`);
   document.documentElement.style.setProperty("--battle-mobile-vw", `${visualW}px`);
   document.documentElement.style.setProperty("--battle-mobile-vh", `${visualH}px`);
   document.documentElement.style.setProperty("--battle-mobile-shell-w", `${viewportW}px`);
   document.documentElement.style.setProperty("--battle-mobile-shell-h", `${viewportH}px`);
+  fitActiveHand(document.querySelectorAll("#hand .tile").length);
+  renderTableCanvas();
 }
 
 function preventBattleViewportGesture(event) {
@@ -2206,6 +3440,11 @@ function bindTileHover() {
 
 async function initBattleApp() {
   restoreBattleAccount();
+  loadBattleRoomSummary();
+  if (!battleTokenValue()) {
+    window.location.href = "/battle-login";
+    return;
+  }
   applyAppMode();
   syncBattleMobileViewport();
   bindBattleViewportLock();
@@ -2227,6 +3466,9 @@ async function initBattleApp() {
   });
   if ($("roomMenuPanel")) $("roomMenuPanel").addEventListener("click", (event) => event.stopPropagation());
   if ($("exitRoomBtn")) $("exitRoomBtn").addEventListener("click", exitBattleRoom);
+  if ($("ownerApplySettingsBtn")) $("ownerApplySettingsBtn").addEventListener("click", ownerApplyRoomSettings);
+  if ($("ownerKickBtn")) $("ownerKickBtn").addEventListener("click", ownerKickRoomPlayer);
+  if ($("ownerCloseRoomBtn")) $("ownerCloseRoomBtn").addEventListener("click", ownerCloseBattleRoom);
   if ($("bugReportBtn")) $("bugReportBtn").addEventListener("click", openBattleBugReport);
   if ($("bugReportForm")) $("bugReportForm").addEventListener("submit", reportBattleBug);
   if ($("bugReportCancelBtn")) $("bugReportCancelBtn").addEventListener("click", () => setBugReportModalOpen(false));
@@ -2241,8 +3483,9 @@ async function initBattleApp() {
       if (event.target === $("playerStatsModal")) closePlayerStatsModal();
     });
   }
-  if ($("newRoundBtn")) $("newRoundBtn").addEventListener("click", () => newRound(false));
-  if ($("resetMatchBtn")) $("resetMatchBtn").addEventListener("click", () => newRound(true));
+  if ($("newRoundBtn")) $("newRoundBtn").addEventListener("click", newRound);
+  if ($("resetMatchBtn")) $("resetMatchBtn").addEventListener("click", reseatPlayers);
+  await refreshBattleRoomSummary().catch((error) => console.warn("room summary refresh failed", error));
   await refresh();
   startBattleWaitLoop().catch((error) => console.warn("battle wait loop stopped", error));
   startBattleHeartbeatLoop().catch((error) => console.warn("battle heartbeat loop stopped", error));
