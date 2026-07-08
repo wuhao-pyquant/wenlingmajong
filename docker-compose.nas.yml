@@ -1,0 +1,50 @@
+services:
+  wenling-mahjong:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wenling-mahjong:local
+    container_name: wenling-mahjong
+    restart: unless-stopped
+    environment:
+      WENLING_DATA_DIR: /data
+      WENLING_ADMIN_USERNAME: ${WENLING_ADMIN_USERNAME:?set WENLING_ADMIN_USERNAME in .env}
+      WENLING_ADMIN_PASSWORD: ${WENLING_ADMIN_PASSWORD:?set WENLING_ADMIN_PASSWORD in .env}
+      WENLING_INVITE_CODES: ${WENLING_INVITE_CODES:-7392,WL8K2}
+      WENLING_MAX_ROOMS: ${WENLING_MAX_ROOMS:-3}
+      WENLING_DEFAULT_AI_POLICY: ${WENLING_DEFAULT_AI_POLICY:-low}
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: "3.0"
+    networks:
+      - wenling-private
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: wenling-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - wenling-mahjong
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - wenling-private
+
+networks:
+  wenling-private:
+    driver: bridge
