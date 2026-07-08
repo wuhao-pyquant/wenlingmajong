@@ -56,6 +56,10 @@ const BATTLE_HEARTBEAT_INTERVAL_MS = 10000;
 const BATTLE_MOBILE_LOGICAL_WIDTH = 1500;
 const BATTLE_TABLE_BASE_HEIGHT = 780;
 const BATTLE_MOBILE_MIN_LOGICAL_HEIGHT = BATTLE_TABLE_BASE_HEIGHT;
+const BATTLE_ROOM_PANEL_BASE_WIDTH = 900;
+const BATTLE_ROOM_PANEL_BASE_HEIGHT = 700;
+const BATTLE_SETTLEMENT_BASE_WIDTH = 980;
+const BATTLE_SETTLEMENT_BASE_HEIGHT = 760;
 const BATTLE_RIVER_NORMAL_LIMIT = 12;
 const BATTLE_RIVER_DENSE_LIMIT = 15;
 const BATTLE_PUBLIC_MELD_ROW_LIMIT = 10.45;
@@ -2437,7 +2441,7 @@ function renderPlayerStatsModal() {
                 <span>${escapeXml(row.wind || "-")}</span>
               </div>
               <div class="player-stat-luck">
-                <span>閺堫剚鍩ч梻纾嬬箥濮樻柨瀹?/span>
+                <span>\u672c\u623f\u95f4\u8fd0\u6c14\u5ea6</span>
                 <b>${escapeXml(luckText(roomStats))}</b>
               </div>
             </div>
@@ -2455,13 +2459,13 @@ function renderPlayerStatsModal() {
                 <span>\u6bcf\u5c40\u5f97\u724c</span><b>${pairCell(allStats, todayStats, "avg_de_draws")}</b>
                 <span>\u6bcf\u5c40\u52a0\u756a\u82b1</span><b>${pairCell(allStats, todayStats, "avg_fan_flower_draws")}</b>
               </div>
-              <div class="player-stat-luck-note">閹稿婀伴幋鍧楁？瀹告彃鐣幋鎰畱 ${Number(roomStats.luck_hands || 0)} 鐏炩偓閸欐牕閽╅崸鍥风幢瑜拌绨抽崗鎶芥４閹村潡妫块崥搴㈢闂嗚翰鈧?/div>
+              <div class="player-stat-luck-note">\u672c\u623f\u95f4\u5df2\u7edf\u8ba1 ${Number(roomStats.luck_hands || 0)} \u5c40\u624b\u6c14\u6570\u636e\u3002</div>
             </details>
           </section>
         `;
       }).join("")}
     </div>
-    <div class="player-stats-note">閸欘亝妯夌粈鍝勭秼閸撳秶澧濈仦鈧稉顓犳畱 4 娑擃亞甯虹€硅绱辨潻鎰毜鎼达附妲搁張顒侇偧閹村潡妫挎潻鎰攽閺堢喖妫块惃鍕礋鐏炩偓楠炲啿娼庨敍灞藉従娴犳牞顕涢幆鍛瘻閳ユ粓鏆遍張?/ 娴犲﹥妫╅垾婵嗙潔缁€鎭掆偓?/div>
+    <div class="player-stats-note">\u957f\u671f / \u4eca\u65e5 \u8868\u793a\u8d26\u53f7\u5386\u53f2\u7edf\u8ba1\u4e0e\u4eca\u65e5\u7edf\u8ba1\uff1b\u672c\u623f\u95f4\u8fd0\u6c14\u5ea6\u53ea\u7edf\u8ba1\u5f53\u524d\u623f\u95f4\u5df2\u5b8c\u6210\u5bf9\u5c40\u3002</div>
   `;
 }
 
@@ -3364,6 +3368,30 @@ function applyAppMode() {
   if ($("gameView")) $("gameView").classList.add("active");
   if ($("roundMeta")) $("roundMeta").textContent = "在线房间";
 }
+function updateBattleModalFitVars(viewportW, viewportH, tableScale = 1) {
+  const width = Math.max(1, Number(viewportW) || 1);
+  const height = Math.max(1, Number(viewportH) || 1);
+  const outerScale = Math.max(0.1, Number(tableScale) || 1);
+  const inset = 28;
+  const safeW = Math.max(1, width - inset);
+  const safeH = Math.max(1, height - inset);
+  const fitScale = (baseW, baseH) => Math.max(
+    0.1,
+    Math.min(1, safeW / (baseW * outerScale), safeH / (baseH * outerScale))
+  );
+  const roomScale = fitScale(BATTLE_ROOM_PANEL_BASE_WIDTH, BATTLE_ROOM_PANEL_BASE_HEIGHT);
+  const settlementScale = fitScale(BATTLE_SETTLEMENT_BASE_WIDTH, BATTLE_SETTLEMENT_BASE_HEIGHT);
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--room-panel-base-w", `${BATTLE_ROOM_PANEL_BASE_WIDTH}px`);
+  rootStyle.setProperty("--room-panel-base-h", `${BATTLE_ROOM_PANEL_BASE_HEIGHT}px`);
+  rootStyle.setProperty("--room-panel-fit-scale", roomScale.toFixed(4));
+  rootStyle.setProperty("--room-panel-safe-h", `${Math.floor(safeH / (roomScale * outerScale))}px`);
+  rootStyle.setProperty("--settlement-base-w", `${BATTLE_SETTLEMENT_BASE_WIDTH}px`);
+  rootStyle.setProperty("--settlement-base-h", `${BATTLE_SETTLEMENT_BASE_HEIGHT}px`);
+  rootStyle.setProperty("--settlement-fit-scale", settlementScale.toFixed(4));
+  rootStyle.setProperty("--settlement-safe-h", `${Math.floor(safeH / (settlementScale * outerScale))}px`);
+}
+
 function syncBattleMobileViewport() {
   if (APP_MODE !== "battle") return;
   const coarse = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
@@ -3396,6 +3424,7 @@ function syncBattleMobileViewport() {
     document.documentElement.style.setProperty("--battle-desktop-available-h", `${availableH}px`);
     document.documentElement.style.setProperty("--battle-desktop-vw", `${desktopW}px`);
     document.documentElement.style.setProperty("--battle-desktop-vh", `${desktopH}px`);
+    updateBattleModalFitVars(availableW, availableH, desktopScale);
     document.documentElement.style.removeProperty("--battle-mobile-scale");
     document.documentElement.style.removeProperty("--battle-mobile-table-w");
     document.documentElement.style.removeProperty("--battle-mobile-table-h");
@@ -3439,6 +3468,7 @@ function syncBattleMobileViewport() {
   document.documentElement.style.setProperty("--battle-mobile-vh", `${visualH}px`);
   document.documentElement.style.setProperty("--battle-mobile-shell-w", `${viewportW}px`);
   document.documentElement.style.setProperty("--battle-mobile-shell-h", `${viewportH}px`);
+  updateBattleModalFitVars(viewportW, viewportH, scale);
   fitActiveHand(document.querySelectorAll("#hand .tile").length);
   renderTableCanvas();
 }

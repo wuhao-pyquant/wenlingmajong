@@ -193,6 +193,43 @@ class OnlineServerTests(unittest.TestCase):
         for broken in ("鑺", "鍒", "鐣", "鑳", "闁", "閺", "鍓", "绛圭爜", "鍏抽棴", "杩愭皵"):
             self.assertNotIn(broken, settlement_chunk)
 
+    def test_player_stats_frontend_text_is_readable_chinese(self) -> None:
+        battle_app = (ROOT / "static" / "battle_app.js").read_text(encoding="utf-8")
+        stats_chunk = battle_app[
+            battle_app.index("function renderPlayerStatsModal"):
+            battle_app.index("function renderActions")
+        ]
+
+        for expected in (
+            "\\u672c\\u623f\\u95f4\\u8fd0\\u6c14\\u5ea6",
+            "\\u672c\\u623f\\u95f4\\u5df2\\u7edf\\u8ba1",
+            "\\u957f\\u671f / \\u4eca\\u65e5",
+            "\\u8d26\\u53f7\\u5386\\u53f2\\u7edf\\u8ba1\\u4e0e\\u4eca\\u65e5\\u7edf\\u8ba1",
+            "\\u5f53\\u524d\\u623f\\u95f4\\u5df2\\u5b8c\\u6210\\u5bf9\\u5c40",
+        ):
+            self.assertIn(expected, stats_chunk)
+
+        for broken in ("\u95c1", "\u95c2", "\u95f9", "\u9237", "\ufffd"):
+            self.assertNotIn(broken, stats_chunk)
+
+    def test_mobile_battle_modals_fit_viewport_contract(self) -> None:
+        battle_app = (ROOT / "static" / "battle_app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "styles.css").read_text(encoding="utf-8")
+        geometry_v7 = (ROOT / "static" / "battle_geometry_v7.css").read_text(encoding="utf-8")
+
+        self.assertIn("function updateBattleModalFitVars", battle_app)
+        self.assertIn("--room-panel-fit-scale", battle_app)
+        self.assertIn("--settlement-fit-scale", battle_app)
+        self.assertIn("updateBattleModalFitVars(viewportW, viewportH, scale)", battle_app)
+        self.assertIn("--room-panel-base-w", geometry_v7)
+        self.assertIn("scale(var(--room-panel-fit-scale, 1))", geometry_v7)
+        self.assertIn("overflow: auto !important", geometry_v7)
+        self.assertIn("#ownerRoomControls", geometry_v7)
+        self.assertIn("#exitRoomBtn", geometry_v7)
+        self.assertIn("--settlement-base-w", styles)
+        self.assertIn("scale(var(--settlement-fit-scale, 1))", styles)
+        self.assertIn("--settlement-safe-h", styles)
+
     def test_task6_admin_room_frontend_contract(self) -> None:
         admin_html = (ROOT / "static" / "battle_admin.html").read_text(encoding="utf-8")
         admin_app = (ROOT / "static" / "battle_admin.js").read_text(encoding="utf-8")

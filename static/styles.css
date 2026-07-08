@@ -6613,6 +6613,7 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
 }
 
 .mahjong-table .winner-burst {
+  --winner-burst-opacity: 0.72;
   position: absolute !important;
   z-index: 92 !important;
   pointer-events: none !important;
@@ -6648,15 +6649,15 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
   inset: -34px;
   border-radius: 50%;
   background:
-    repeating-conic-gradient(from 10deg, rgba(255, 244, 151, 0.9) 0 9deg, transparent 9deg 18deg),
-    radial-gradient(circle, rgba(255, 221, 70, 0.34), transparent 64%);
+    repeating-conic-gradient(from 10deg, rgba(255, 244, 151, 0.42) 0 9deg, transparent 9deg 18deg),
+    radial-gradient(circle, rgba(255, 221, 70, 0.18), transparent 64%);
   filter: blur(0.2px);
   animation: winnerSpin 5s linear infinite;
 }
 
 .mahjong-table .winner-burst::after {
   inset: -58px;
-  opacity: 0.72;
+  opacity: 0.44;
   transform: rotate(18deg);
   animation-name: winnerSpinReverse;
 }
@@ -6692,7 +6693,7 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
 }
 
 .mahjong-table .winner-leizi-burst {
-  opacity: 1 !important;
+  opacity: 0.82 !important;
   animation: none !important;
 }
 
@@ -6707,6 +6708,7 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
   height: 138px;
   object-fit: contain;
   border-radius: 18px;
+  opacity: 0.82;
   filter: drop-shadow(0 0 28px rgba(255, 226, 103, 0.72));
 }
 
@@ -6720,9 +6722,9 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
 
 @keyframes winnerBurstShell {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0.45); }
-  8% { opacity: 1; transform: translate(-50%, -50%) scale(1.16); }
-  24% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  82% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
+  8% { opacity: var(--winner-burst-opacity); transform: translate(-50%, -50%) scale(1.16); }
+  24% { opacity: var(--winner-burst-opacity); transform: translate(-50%, -50%) scale(1); }
+  82% { opacity: var(--winner-burst-opacity); transform: translate(-50%, -50%) scale(1.03); }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.45); }
 }
 
@@ -8137,4 +8139,33 @@ body.battle-app-mode .mahjong-table .meld-set .tile.small.claimed-discard {
   margin-left: 6px !important;
   margin-right: 6px !important;
   z-index: 2;
+}
+
+/* Mobile settlement modal fit pass. Keep the original dense settlement layout
+   and scale the entire popup to the current battle viewport. */
+@media (pointer: coarse), (max-width: 900px), (max-height: 520px) {
+  body.battle-app-mode.battle-mobile-table .settlement-popup,
+  body.battle-app-mode.battle-mobile-table .mahjong-table .settlement-popup {
+    top: 50% !important;
+    left: 50% !important;
+    width: var(--settlement-base-w, 980px) !important;
+    height: auto !important;
+    max-width: var(--settlement-base-w, 980px) !important;
+    max-height: min(var(--settlement-base-h, 760px), var(--settlement-safe-h, 760px)) !important;
+    transform: translate(-50%, -50%) scale(var(--settlement-fit-scale, 1)) !important;
+    transform-origin: center center !important;
+    overflow: hidden !important;
+  }
+
+  body.battle-app-mode.battle-mobile-table .settlement-popup.visible,
+  body.battle-app-mode.battle-mobile-table .mahjong-table .settlement-popup.visible {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  body.battle-app-mode.battle-mobile-table .settlement-popup-body,
+  body.battle-app-mode.battle-mobile-table .mahjong-table .settlement-popup-body {
+    max-height: calc(min(var(--settlement-base-h, 760px), var(--settlement-safe-h, 760px)) - 70px) !important;
+    overflow: auto !important;
+  }
 }

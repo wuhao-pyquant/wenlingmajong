@@ -45,6 +45,10 @@ class RepositoryBoundaryTests(unittest.TestCase):
         self.assertNotIn("lastWinAnimationStartedAt", script)
         self.assertIn("winnerBurstShell 5s ease-in-out infinite", styles)
         self.assertIn("winnerSeatGlow 5s ease-in-out infinite", styles)
+        self.assertIn("--winner-burst-opacity: 0.72", styles)
+        self.assertIn("opacity: var(--winner-burst-opacity)", styles)
+        self.assertIn("rgba(255, 244, 151, 0.42)", styles)
+        self.assertIn("opacity: 0.44", styles)
         self.assertTrue(gif.is_file())
 
     def test_android_room_service_holds_and_releases_runtime_locks(self) -> None:
