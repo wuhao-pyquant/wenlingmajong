@@ -109,6 +109,14 @@ class OnlineServerTests(unittest.TestCase):
                 html = response.read().decode("utf-8")
             self.assertIn(expected, html)
 
+    def test_online_lobby_page_is_public_from_remote_clients(self) -> None:
+        html = self.open_path(
+            "/battle-lobby",
+            headers={"X-Forwarded-For": "192.168.1.22"},
+        ).decode("utf-8")
+
+        self.assertIn("battle_lobby.js", html)
+
     def test_task6_review_owner_controls_frontend_contract(self) -> None:
         battle_html = (ROOT / "static" / "battle.html").read_text(encoding="utf-8")
         login_html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")

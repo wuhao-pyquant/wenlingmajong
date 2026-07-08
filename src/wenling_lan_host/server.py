@@ -29,6 +29,7 @@ from .rooms import RoomManager
 PUBLIC_GET_PATHS = {
     "/",
     "/battle-login",
+    "/battle-lobby",
     "/battle-admin",
     "/battle/admin",
     "/battle",

@@ -18,7 +18,7 @@ COPY static ./static
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt \
     && mkdir -p /data \
-    && chown -R wenling:wenling /data
+    && chown -R wenling:wenling /app /data
 
 USER wenling
 
