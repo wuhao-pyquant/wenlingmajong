@@ -9,7 +9,9 @@ import sqlite3
 
 from wenling_lan_host.battle_app import BattleSession
 from wenling_lan_host.battle_db import AI_ACCOUNTS, BattleDatabase
+from wenling_lan_host.auth import hash_password, verify_password
 from wenling_lan_host.config import HostConfig
+from wenling_lan_host.server import BattleApplication
 
 
 class OnlineDatabaseTests(unittest.TestCase):
@@ -29,7 +31,7 @@ class OnlineDatabaseTests(unittest.TestCase):
         self.assertEqual(config.data_dir, Path("/data"))
         self.assertEqual(config.admin_username, "root")
         self.assertEqual(config.admin_password, "secret")
-        self.assertEqual(config.initial_invite_codes, ["7392", "WL8K2"])
+        self.assertEqual(config.initial_invite_codes, ["WL1234", "7392", "WL8K2"])
         self.assertEqual(config.max_rooms, 3)
         self.assertFalse(config.allow_public_register)
 
@@ -38,8 +40,33 @@ class OnlineDatabaseTests(unittest.TestCase):
 
         self.assertEqual(config.admin_username, "")
         self.assertEqual(config.admin_password, "")
-        self.assertEqual(config.initial_invite_codes, [])
+        self.assertEqual(config.initial_invite_codes, ["WL1234"])
         self.assertFalse(config.allow_public_register)
+
+    def test_application_bootstraps_default_invite_and_resets_human_passwords_to_1234(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            db = BattleDatabase(data_dir / "battle.sqlite3")
+            self._seed_invite(db, "7392")
+            db.create_player_account("alice", hash_password("secret123"), "7392")
+            db.bootstrap_admin("root", hash_password("admin123"))
+
+            app = BattleApplication(
+                data_dir,
+                Path(__file__).resolve().parents[1] / "static",
+                admin_username="root",
+                admin_password_hash=hash_password("admin123"),
+                initial_invite_codes=[],
+                quiet_http_logs=True,
+            )
+            try:
+                self.assertEqual(app.database.invite_code("WL1234")["code"], "WL1234")
+                self.assertTrue(verify_password("1234", app.database.account("alice")["password_hash"]))
+                self.assertTrue(verify_password("1234", app.database.account("root")["password_hash"]))
+                self.assertFalse(verify_password("secret123", app.database.account("alice")["password_hash"]))
+                self.assertFalse(verify_password("admin123", app.database.account("root")["password_hash"]))
+            finally:
+                app.close()
 
     def test_new_database_schema_has_roles_passwords_ai_and_invites(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

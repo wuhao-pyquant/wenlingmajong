@@ -321,6 +321,18 @@ class BattleDatabase:
             )
         return self.account(name)
 
+    def set_all_human_passwords(self, password_hash: str) -> int:
+        if not str(password_hash or "").strip():
+            raise ValueError("password hash required")
+        with closing(self.connect()) as con, con:
+            return int(
+                con.execute(
+                    "UPDATE accounts SET password_hash = ? WHERE is_ai = 0",
+                    (str(password_hash),),
+                ).rowcount
+                or 0
+            )
+
     def mark_login(self, account_name: str) -> dict[str, Any]:
         name = self.normalize_account(account_name)
         with closing(self.connect()) as con, con:

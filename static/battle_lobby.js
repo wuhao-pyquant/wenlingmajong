@@ -5,6 +5,8 @@ const ROOM_KEY = "wenling.online.room_id.v1";
 const ROOM_SUMMARY_KEY = "wenling.online.room_summary.v1";
 
 const $ = (id) => document.getElementById(id);
+const isAuthPage = Boolean($("loginBtn") || $("registerBtn"));
+const isLobbyPage = Boolean($("roomTableGrid"));
 let roomRefreshTimer = null;
 let loadingRooms = false;
 let lastRooms = [];
@@ -88,7 +90,7 @@ function setSession(payload) {
     localStorage.setItem(ROLE_KEY, role);
     localStorage.setItem(TOKEN_KEY, payload.session_token || "");
   } catch {
-    // Hardened browser profiles can block localStorage.
+    // localStorage can be unavailable in hardened browser profiles.
   }
 }
 
@@ -100,7 +102,82 @@ function clearSession() {
     localStorage.removeItem(ROOM_KEY);
     localStorage.removeItem(ROOM_SUMMARY_KEY);
   } catch {
-    // Hardened browser profiles can block localStorage.
+    // localStorage can be unavailable in hardened browser profiles.
+  }
+}
+
+function setMessage(text, bad = false) {
+  const box = $("lobbyMessage");
+  if (box) {
+    box.textContent = text || "";
+    box.classList.toggle("bad", Boolean(bad));
+  }
+  const statusTitle = $("authStatusTitle");
+  const statusDetail = $("authStatusDetail");
+  if (statusTitle && text) {
+    statusTitle.textContent = bad ? "操作失败" : "状态更新";
+    statusDetail.textContent = text;
+  }
+}
+
+function setAuthStatus(title, detail, bad = false) {
+  const statusTitle = $("authStatusTitle");
+  const statusDetail = $("authStatusDetail");
+  if (statusTitle) statusTitle.textContent = title;
+  if (statusDetail) statusDetail.textContent = detail;
+  const card = document.querySelector(".auth-status-card");
+  if (card) card.classList.toggle("bad", Boolean(bad));
+}
+
+function readNoticeFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const notice = params.get("notice");
+  if (notice) {
+    setMessage(notice);
+    setAuthStatus("需要登录", notice);
+  }
+}
+
+function updateSessionUi() {
+  const account = accountValue();
+  const role = roleValue();
+  if ($("currentAccountLabel")) $("currentAccountLabel").textContent = account || "未登录";
+  if ($("currentRoleLabel")) $("currentRoleLabel").textContent = account ? (role === "admin" ? "管理员" : "玩家") : "";
+  if ($("logoutBtn")) $("logoutBtn").disabled = !tokenValue();
+  const adminEntry = $("adminEntry");
+  if (adminEntry) adminEntry.hidden = role !== "admin" || !tokenValue();
+}
+
+async function login() {
+  try {
+    setAuthStatus("正在登录", "正在验证账号密码。");
+    const payload = await post("/api/auth/login", {
+      account: $("loginAccountInput").value.trim(),
+      password: $("loginPasswordInput").value,
+    });
+    setSession(payload);
+    setAuthStatus("登录成功", "正在进入选桌大厅。");
+    window.location.href = "/battle-lobby";
+  } catch (error) {
+    setAuthStatus("登录失败", error.message, true);
+    setMessage(error.message, true);
+  }
+}
+
+async function register() {
+  try {
+    setAuthStatus("正在注册", "正在验证邀请码并创建账号。");
+    const payload = await post("/api/auth/register", {
+      account: $("registerAccountInput").value.trim(),
+      password: $("registerPasswordInput").value,
+      invite_code: $("inviteCodeInput").value.trim().toUpperCase(),
+    });
+    setSession(payload);
+    setAuthStatus("注册成功", "账号已登录，正在进入选桌大厅。");
+    window.location.href = "/battle-lobby";
+  } catch (error) {
+    setAuthStatus("注册失败", error.message, true);
+    setMessage(error.message, true);
   }
 }
 
@@ -108,12 +185,14 @@ function roomStatusValue(room) {
   return String(room?.status || room?.room_status || "").trim().toLowerCase();
 }
 
-function activeOwnedRoom(rooms = lastRooms) {
-  const account = accountValue();
-  if (!account) return null;
-  return (rooms || []).find((room) => (
-    room?.owner_account === account && roomStatusValue(room) !== "closed"
-  )) || null;
+function roomStatusLabel(status) {
+  const key = String(status || "").toLowerCase();
+  if (key === "open" || key === "waiting") return "等待中";
+  if (key === "playing") return "对局中";
+  if (key === "round_over") return "结算中";
+  if (key === "closing") return "关闭中";
+  if (key === "closed") return "已关闭";
+  return status || "未知";
 }
 
 function normalizeRoomSummary(room) {
@@ -135,169 +214,173 @@ function saveRoomSummary(room) {
   try {
     localStorage.setItem(ROOM_SUMMARY_KEY, JSON.stringify(normalizeRoomSummary(room)));
   } catch {
-    // Hardened browser profiles can block localStorage.
+    // localStorage can be unavailable in hardened browser profiles.
   }
 }
 
-function ensureCreateRoomNotice() {
-  let box = $("createRoomNotice");
-  if (box) return box;
-  const createRow = $("createRoomBtn")?.closest(".online-room-create-row") || $("createRoomBtn")?.parentElement;
-  if (!createRow) return null;
-  box = document.createElement("div");
-  box.id = "createRoomNotice";
-  box.className = "create-room-notice";
-  createRow.insertAdjacentElement("afterend", box);
-  return box;
-}
-
-function updateCreateRoomAvailability(rooms = lastRooms, maxRooms = lastMaxRooms) {
-  const createButton = $("createRoomBtn");
-  if (!createButton) return;
-  const notice = ensureCreateRoomNotice();
-  const token = tokenValue();
-  const owned = activeOwnedRoom(rooms);
-  const roomLimitReached = (rooms || []).length >= maxRooms;
-  createButton.disabled = !token || Boolean(owned) || roomLimitReached;
-  if (!token) {
-    createButton.title = "请先登录账号";
-    if (notice) notice.textContent = "";
-  } else if (owned) {
-    createButton.title = "你已经拥有一个进行中的房间";
-    if (notice) notice.textContent = `你已创建房间「${owned.room_name || owned.room_id}」，请先进入或关闭该房间。`;
-  } else if (roomLimitReached) {
-    createButton.title = "当前房间数量已满";
-    if (notice) notice.textContent = "当前房间数量已满，暂时不能创建新房间。";
-  } else {
-    createButton.title = "";
-    if (notice) notice.textContent = "";
-  }
-}
-
-function setMessage(text, bad = false) {
-  const box = $("lobbyMessage");
-  if (!box) return;
-  box.textContent = text || "";
-  box.classList.toggle("bad", Boolean(bad));
-}
-
-function updateSessionUi() {
-  const account = accountValue();
-  const role = roleValue();
-  $("currentAccountLabel").textContent = account || "未登录";
-  $("currentRoleLabel").textContent = account ? (role === "admin" ? "管理员" : "玩家") : "";
-  $("logoutBtn").disabled = !tokenValue();
-  updateCreateRoomAvailability();
-  const adminEntry = $("adminEntry");
-  if (adminEntry) adminEntry.hidden = role !== "admin" || !tokenValue();
-}
-
-async function login() {
+function saveRoomId(roomId) {
   try {
-    const payload = await post("/api/auth/login", {
-      account: $("loginAccountInput").value.trim(),
-      password: $("loginPasswordInput").value,
-    });
-    setSession(payload);
-    setMessage("登录成功。");
-    await loadRooms();
-  } catch (error) {
-    setMessage(error.message, true);
+    localStorage.setItem(ROOM_KEY, roomId || "");
+  } catch {
+    // localStorage can be unavailable in hardened browser profiles.
   }
 }
 
-async function register() {
-  try {
-    const payload = await post("/api/auth/register", {
-      account: $("registerAccountInput").value.trim(),
-      password: $("registerPasswordInput").value,
-      invite_code: $("inviteCodeInput").value.trim().toUpperCase(),
-    });
-    setSession(payload);
-    setMessage("注册成功，已登录。");
-    await loadRooms();
-  } catch (error) {
-    setMessage(error.message, true);
-  }
+function accountSeat(room, account = accountValue()) {
+  return (room?.seats || []).find((seat) => seat?.account === account) || null;
+}
+
+function firstEmptySeat(room) {
+  return (room?.seats || []).find((seat) => !seat?.account) || null;
+}
+
+function roomForSlot(index) {
+  return lastRooms[index] || null;
 }
 
 async function loadRooms() {
   updateSessionUi();
   if (!tokenValue()) {
-    $("roomList").innerHTML = '<div class="online-empty">请先登录账号。</div>';
+    window.location.href = "/battle-login?notice=" + encodeURIComponent("请先登录账号。");
     return;
   }
   if (loadingRooms) return;
   loadingRooms = true;
   try {
     const payload = await api("/api/lobby/rooms");
-    renderRooms(payload.rooms || [], payload.max_rooms || 3);
+    renderTableSlots(payload.rooms || [], payload.max_rooms || 3);
   } catch (error) {
-    $("roomList").innerHTML = "";
     setMessage(error.message, true);
+    if (String(error.message || "").toLowerCase().includes("login")) {
+      window.location.href = "/battle-login?notice=" + encodeURIComponent("登录已失效，请重新登录。");
+    }
   } finally {
     loadingRooms = false;
     updateSessionUi();
   }
 }
 
-function roomStatusLabel(status) {
-  const key = String(status || "").toLowerCase();
-  if (key === "open" || key === "waiting") return "等待中";
-  if (key === "playing") return "对局中";
-  if (key === "round_over") return "结算中";
-  if (key === "closing") return "关闭中";
-  if (key === "closed") return "已关闭";
-  return status || "未知";
+function renderSeatDots(room) {
+  const seats = Array.isArray(room?.seats) ? room.seats : [];
+  const labels = ["东", "南", "西", "北"];
+  return labels.map((label, index) => {
+    const seat = seats[index] || {};
+    const account = seat.account || "";
+    const ready = Boolean(seat.ready || (room?.ready_accounts || []).includes(account));
+    const mine = account && account === accountValue();
+    const className = [
+      "room-table-seat",
+      account ? "filled" : "empty",
+      ready ? "ready" : "",
+      mine ? "mine" : "",
+    ].filter(Boolean).join(" ");
+    return `<span class="${className}" title="${escapeHtml(account || "空位")}"><b>${label}</b><em>${escapeHtml(account || "空位")}</em></span>`;
+  }).join("");
 }
 
-function renderRooms(rooms, maxRooms) {
-  lastRooms = Array.isArray(rooms) ? rooms.slice() : [];
+function tableActionText(room) {
+  if (!room) return "点击创建";
+  const mine = accountSeat(room);
+  if (mine) return "进入对战";
+  if (roomStatusValue(room) === "playing") return "对局中";
+  if (!firstEmptySeat(room)) return "已满座";
+  return "点击入座";
+}
+
+function renderTableSlots(rooms, maxRooms) {
+  lastRooms = Array.isArray(rooms) ? rooms.slice(0, 3) : [];
   lastMaxRooms = Number(maxRooms) || 3;
-  updateCreateRoomAvailability(lastRooms, lastMaxRooms);
-  if (!rooms.length) {
-    $("roomList").innerHTML = '<div class="online-empty">暂无房间。</div>';
+  const grid = $("roomTableGrid");
+  if (!grid) return;
+  const slots = Array.from(grid.querySelectorAll(".room-table-slot"));
+  slots.forEach((slot, index) => {
+    const room = roomForSlot(index);
+    const status = roomStatusValue(room);
+    const mine = Boolean(accountSeat(room));
+    const emptySeat = room ? firstEmptySeat(room) : null;
+    const disabled = Boolean(room && status === "playing" && !mine) || Boolean(room && !emptySeat && !mine);
+    slot.disabled = disabled;
+    slot.dataset.roomId = room?.room_id || "";
+    slot.className = [
+      "room-table-slot",
+      room ? "room-table-active" : "room-table-empty",
+      mine ? "room-table-mine" : "",
+      disabled ? "room-table-disabled" : "",
+      status ? `room-status-${status}` : "",
+    ].filter(Boolean).join(" ");
+    slot.innerHTML = `
+      <span class="room-table-head">
+        <strong>${escapeHtml(room?.room_name || `${index + 1}号桌`)}</strong>
+        <span class="tag">${escapeHtml(room ? roomStatusLabel(room.status) : "空桌")}</span>
+      </span>
+      <span class="room-table-icon" aria-hidden="true">
+        <span class="room-table-felt"></span>
+        ${renderSeatDots(room)}
+      </span>
+      <span class="room-table-meta">
+        <span>房主：${escapeHtml(room?.owner_account || "-")}</span>
+        <span>AI：${room?.ai_policy === "high" ? "高级" : "低级"}</span>
+      </span>
+      <span class="room-table-actions">
+        <span class="room-table-action-label">${tableActionText(room)}</span>
+        ${mine ? `<button class="table-ready-btn" type="button" data-room-id="${escapeHtml(room.room_id)}">${(room.ready_accounts || []).includes(accountValue()) ? "取消准备" : "准备"}</button>` : ""}
+      </span>
+    `;
+  });
+}
+
+async function createOrJoinTable(slotIndex) {
+  if (!tokenValue()) {
+    window.location.href = "/battle-login?notice=" + encodeURIComponent("请先登录账号。");
     return;
   }
-  $("roomList").innerHTML = rooms.map((room) => {
-    const seats = (room.seats || [])
-      .map((seat) => seat.account || seat.effective_account || "空位")
-      .join(" / ");
-    const mine = room.owner_account === accountValue();
-    return `
-      <article class="online-room-card" data-room-id="${escapeHtml(room.room_id)}">
-        <div class="room-card-head">
-          <strong>${escapeHtml(room.room_name || "温岭麻将房间")}</strong>
-          <span class="tag">${escapeHtml(roomStatusLabel(room.status))}</span>
-        </div>
-        <div>房主：${escapeHtml(room.owner_account || "-")}</div>
-        <div>座位：${escapeHtml(seats || "空位")}</div>
-        <div>AI：${room.ai_policy === "high" ? "高级" : "低级"}</div>
-        <div class="room-card-actions">
-          <button class="primary enter-room-btn" data-room-id="${escapeHtml(room.room_id)}" type="button">进入房间</button>
-          ${mine ? `<button class="close-room-btn" data-room-id="${escapeHtml(room.room_id)}" type="button">关闭房间</button>` : ""}
-        </div>
-      </article>
-    `;
-  }).join("");
-  document.querySelectorAll(".enter-room-btn").forEach((button) => {
-    button.addEventListener("click", () => {
-      const room = lastRooms.find((item) => String(item.room_id) === String(button.dataset.roomId));
-      enterRoom(button.dataset.roomId, room);
+  const room = roomForSlot(slotIndex);
+  try {
+    if (!room) {
+      if (lastRooms.length >= lastMaxRooms) {
+        setMessage("当前房间数量已满。", true);
+        return;
+      }
+      const created = await post("/api/lobby/rooms", {
+        room_name: `${slotIndex + 1}号桌`,
+        ai_policy: $("roomAiPolicySelect")?.value || "low",
+      });
+      enterRoom(created.room_id, created);
+      return;
+    }
+    const mine = accountSeat(room);
+    if (mine) {
+      enterRoom(room.room_id, room);
+      return;
+    }
+    if (roomStatusValue(room) === "playing") {
+      setMessage("该桌已经开局，未落座玩家不能中途加入。", true);
+      return;
+    }
+    const targetSeat = firstEmptySeat(room);
+    if (!targetSeat) {
+      setMessage("该桌已经满座。", true);
+      return;
+    }
+    const seated = await post(`/api/battle/${encodeURIComponent(room.room_id)}/sit`, {
+      seat: targetSeat.absolute_seat ?? targetSeat.seat ?? 0,
+      room_generation: room.room_generation,
     });
-  });
-  document.querySelectorAll(".close-room-btn").forEach((button) => {
-    button.addEventListener("click", () => closeRoom(button.dataset.roomId));
-  });
+    enterRoom(room.room_id, { ...room, ...seated, room_id: room.room_id });
+  } catch (error) {
+    setMessage(error.message, true);
+    await loadRooms();
+  }
 }
 
-async function createRoom() {
+async function toggleReady(roomId) {
+  const room = lastRooms.find((item) => String(item.room_id) === String(roomId));
+  if (!room) return;
   try {
-    const room = await post("/api/lobby/rooms", {
-      room_name: $("roomNameInput").value.trim(),
-      ai_policy: $("roomAiPolicySelect").value,
+    await post(`/api/battle/${encodeURIComponent(roomId)}/ready`, {
+      room_generation: room.room_generation,
     });
-    enterRoom(room.room_id, room);
+    await loadRooms();
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -305,25 +388,9 @@ async function createRoom() {
 
 function enterRoom(roomId, room = null) {
   if (!roomId) return;
-  try {
-    localStorage.setItem(ROOM_KEY, roomId);
-    if (room) saveRoomSummary(room);
-  } catch {
-    // Hardened browser profiles can block localStorage.
-  }
+  saveRoomId(roomId);
+  if (room) saveRoomSummary(room);
   window.location.href = `/battle?room_id=${encodeURIComponent(roomId)}`;
-}
-
-async function closeRoom(roomId) {
-  if (!window.confirm("确认关闭整个房间？")) return;
-  if (!window.confirm("关闭后本局作废，所有玩家会回到大厅。继续关闭？")) return;
-  try {
-    await post(`/api/lobby/rooms/${encodeURIComponent(roomId)}/close`, { confirm: "CLOSE_ROOM" });
-    setMessage("房间已关闭。");
-    await loadRooms();
-  } catch (error) {
-    setMessage(error.message, true);
-  }
 }
 
 async function logout() {
@@ -333,41 +400,73 @@ async function logout() {
     console.warn("logout failed", error);
   } finally {
     clearSession();
-    setMessage("已退出登录。");
-    await loadRooms();
+    window.location.href = "/battle-login?notice=" + encodeURIComponent("已退出登录。");
   }
 }
 
-function readNoticeFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const notice = params.get("notice");
-  if (notice) setMessage(notice);
-}
-
-function bindEvents() {
-  $("loginBtn").addEventListener("click", login);
-  $("registerBtn").addEventListener("click", register);
-  $("logoutBtn").addEventListener("click", logout);
-  $("createRoomBtn").addEventListener("click", createRoom);
+function bindAuthEvents() {
+  if ($("loginBtn")) $("loginBtn").addEventListener("click", login);
+  if ($("registerBtn")) $("registerBtn").addEventListener("click", register);
   ["loginAccountInput", "loginPasswordInput"].forEach((id) => {
-    $(id).addEventListener("keydown", (event) => {
-      if (event.key === "Enter") login();
-    });
+    if ($(id)) {
+      $(id).addEventListener("keydown", (event) => {
+        if (event.key === "Enter") login();
+      });
+    }
   });
   ["registerAccountInput", "registerPasswordInput", "inviteCodeInput"].forEach((id) => {
-    $(id).addEventListener("keydown", (event) => {
-      if (event.key === "Enter") register();
-    });
+    if ($(id)) {
+      $(id).addEventListener("keydown", (event) => {
+        if (event.key === "Enter") register();
+      });
+    }
   });
 }
 
-async function init() {
-  bindEvents();
+function bindLobbyEvents() {
+  if ($("logoutBtn")) $("logoutBtn").addEventListener("click", logout);
+  if ($("roomTableGrid")) {
+    $("roomTableGrid").addEventListener("click", (event) => {
+      const readyButton = event.target.closest(".table-ready-btn");
+      if (readyButton) {
+        event.stopPropagation();
+        toggleReady(readyButton.dataset.roomId);
+        return;
+      }
+      const slot = event.target.closest(".room-table-slot");
+      if (!slot || slot.disabled) return;
+      createOrJoinTable(Number(slot.dataset.slotIndex || 0));
+    });
+  }
+}
+
+async function initAuthPage() {
   readNoticeFromUrl();
+  bindAuthEvents();
+  if (tokenValue()) {
+    try {
+      const me = await api("/api/auth/me");
+      setSession({ ...me, session_token: tokenValue() });
+      setAuthStatus("已登录", "正在进入选桌大厅。");
+      window.location.href = "/battle-lobby";
+    } catch {
+      clearSession();
+    }
+  }
+}
+
+async function initLobbyPage() {
+  bindLobbyEvents();
+  updateSessionUi();
   await loadRooms();
   roomRefreshTimer = window.setInterval(() => {
     loadRooms().catch((error) => console.warn("room refresh failed", error));
-  }, 5000);
+  }, 3000);
+}
+
+async function init() {
+  if (isAuthPage) await initAuthPage();
+  if (isLobbyPage) await initLobbyPage();
 }
 
 window.addEventListener("pagehide", () => {

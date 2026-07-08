@@ -58,11 +58,11 @@ class LanServerTests(unittest.TestCase):
     ) -> dict:
         if path == "/api/auth/register" and body is not None:
             body = {**body}
-            body.setdefault("password", "secret123")
+            body.setdefault("password", "1234")
             body.setdefault("invite_code", "7392")
         if path == "/api/auth/login" and body is not None:
             body = {**body}
-            body.setdefault("password", "secret123")
+            body.setdefault("password", "1234")
         headers = {}
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -247,8 +247,8 @@ class LanServerTests(unittest.TestCase):
         self.assertGreater(reseated["room_generation"], current["room_generation"])
 
     def test_player_login_uses_token_and_body_cannot_spoof_account(self) -> None:
-        self.application.database.create_player_account("alice", hash_password("secret123"), "7392")
-        self.application.database.create_player_account("bob", hash_password("secret123"), "7392")
+        self.application.database.create_player_account("alice", hash_password("1234"), "7392")
+        self.application.database.create_player_account("bob", hash_password("1234"), "7392")
         available = self.request_json("/api/battle/available-accounts", remote=True)
         self.assertEqual(available["accounts"], ["alice", "bob"])
 
@@ -277,7 +277,7 @@ class LanServerTests(unittest.TestCase):
             self.request_json("/api/battle/state", remote=True)
 
     def test_new_login_invalidates_old_token_and_disabled_account_cannot_login(self) -> None:
-        self.application.database.create_player_account("alice", hash_password("secret123"), "7392")
+        self.application.database.create_player_account("alice", hash_password("1234"), "7392")
         first = self.request_json(
             "/api/auth/login",
             method="POST",

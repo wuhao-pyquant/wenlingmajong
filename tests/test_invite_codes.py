@@ -10,11 +10,11 @@ from wenling_lan_host.battle_db import BattleDatabase
 
 class InviteCodeTests(unittest.TestCase):
     def test_password_hash_round_trip_and_wrong_password_rejected(self) -> None:
-        encoded = hash_password("secret123")
+        encoded = hash_password("1234")
 
-        self.assertTrue(verify_password("secret123", encoded))
+        self.assertTrue(verify_password("1234", encoded))
         self.assertFalse(verify_password("wrong", encoded))
-        self.assertNotIn("secret123", encoded)
+        self.assertNotIn("1234", encoded)
 
     def test_register_consumes_invite_and_login_returns_role(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -22,7 +22,7 @@ class InviteCodeTests(unittest.TestCase):
             db.create_invite_code("7392", created_by="root", max_uses=1)
             store = PlayerSessionStore(db)
 
-            registered = store.register_player("alice", "secret123", "7392")
+            registered = store.register_player("alice", "1234", "7392")
             self.assertEqual(registered["account"], "alice")
             self.assertEqual(registered["role"], "player")
             self.assertTrue(registered["session_token"])
@@ -32,11 +32,26 @@ class InviteCodeTests(unittest.TestCase):
             self.assertEqual(identity.role, "player")
 
             with self.assertRaisesRegex(ValueError, "invite"):
-                store.register_player("bob", "secret123", "7392")
+                store.register_player("bob", "1234", "7392")
 
-            relogged = store.login_password("alice", "secret123")
+            relogged = store.login_password("alice", "1234")
             self.assertEqual(relogged["role"], "player")
             self.assertEqual(store.resolve_identity(relogged["session_token"]).role, "player")
+
+    def test_player_registration_and_login_only_accept_1234(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = BattleDatabase(Path(temp_dir) / "battle.sqlite3")
+            db.create_invite_code("7392", created_by="root", max_uses=2)
+            store = PlayerSessionStore(db)
+
+            with self.assertRaisesRegex(ValueError, "1234"):
+                store.register_player("alice", "secret123", "7392")
+
+            registered = store.register_player("alice", "1234", "7392")
+            self.assertEqual(registered["account"], "alice")
+            with self.assertRaisesRegex(PermissionError, "1234|incorrect"):
+                store.login_password("alice", "secret123")
+            self.assertEqual(store.login_password("alice", "1234")["account"], "alice")
 
     def test_admin_can_disable_invite_code(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

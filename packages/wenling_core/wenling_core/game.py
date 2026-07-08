@@ -7,7 +7,7 @@ import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .hand_luck_runtime import HandLuckScorer, default_hand_luck_scorer
 from .model import LinearPolicyModel, action_label
@@ -23,7 +23,7 @@ from .rules import (
     score_player,
 )
 from .tiles import (
-    FLOWERS,
+    DRAGONS,
     TILE_BY_CODE,
     build_wall,
     flower_set_for_de,
@@ -294,8 +294,14 @@ class WenlingMahjongGame:
         current = self.round_stats[seat]
         if tile in self.de_set:
             current["de_draws"] = int(current.get("de_draws") or 0) + 1
-        if tile in FLOWERS and tile in self.flower_set:
+        if self._is_fan_flower_tile(seat, tile):
             current["fan_flower_draws"] = int(current.get("fan_flower_draws") or 0) + 1
+
+    def _is_fan_flower_tile(self, seat: int, tile: str) -> bool:
+        if tile not in self.flower_set or tile in self.de_set:
+            return False
+        wind_index = self._seat_wind_index(seat)
+        return tile in DRAGONS or tile in {f"rh{wind_index + 1}", f"bh{wind_index + 1}"}
 
     def _record_turn_draw(self, seat: int) -> None:
         if seat < 0 or seat >= len(self.players):
@@ -335,6 +341,7 @@ class WenlingMahjongGame:
         winner: int | None,
         final_hands: list[Counter[str]] | None = None,
         win_type: str = "",
+        settlement_scores: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         while len(self.round_stats) < len(self.players):
             self.round_stats.append(self._empty_round_stats())
@@ -352,7 +359,11 @@ class WenlingMahjongGame:
             result = self.hand_luck_scorer.score(
                 seat=seat,
                 de_draws=min(3, int(current.get("de_draws") or 0)),
-                fan_flower_draws=int(current.get("fan_flower_draws") or 0),
+                fan_flower_draws=self._settlement_fan_flower_count(
+                    seat,
+                    final_hand,
+                    settlement_scores,
+                ),
                 opening_shanten=self._luck_model_distance(
                     current.get("opening_normal_shanten")
                     if current.get("opening_normal_shanten") is not None
@@ -374,6 +385,34 @@ class WenlingMahjongGame:
             if recorder is not None and hasattr(recorder, "record_hand_luck"):
                 recorder.record_hand_luck(account, result.luck_percentile)
         return results
+
+    def _settlement_fan_flower_count(
+        self,
+        seat: int,
+        final_hand: Counter[str],
+        settlement_scores: list[dict[str, Any]] | None = None,
+    ) -> int:
+        if settlement_scores is not None and 0 <= seat < len(settlement_scores):
+            return self._settlement_fan_flower_count_from_score(settlement_scores[seat])
+        score = score_player(
+            final_hand,
+            self.players[seat].flowers,
+            self.players[seat].melds,
+            self._seat_wind_index(seat),
+            self.de_set,
+            self.de_indicator,
+            winner=False,
+        )
+        return self._settlement_fan_flower_count_from_score(score)
+
+    @staticmethod
+    def _settlement_fan_flower_count_from_score(score: Mapping[str, Any]) -> int:
+        total = 0
+        for item in score.get("fan_items", []) or []:
+            label = str(item.get("label") or "")
+            if label.startswith("\u5b57\u724c\u82b1") or label.startswith("\u95e8\u98ce\u82b1"):
+                total += int(item.get("fan") or 0)
+        return total
 
     @staticmethod
     def _hand_luck_feature_win_type(win_type: str, winner: int | None, seat: int) -> str:
@@ -2145,6 +2184,7 @@ class WenlingMahjongGame:
                     win_tile=win_tile if seat == winner else None,
                 )
             )
+        luck_settlement_scores = [dict(score) for score in scores]
         if bao is not None:
             scores[bao.liable_seat] = self._zero_bao_score()
         winner_points = int(scores[winner].get("total") or 0)
@@ -2153,7 +2193,12 @@ class WenlingMahjongGame:
         deltas = self._deltas_from_transactions(transactions)
         for seat, delta in enumerate(deltas):
             self.players[seat].chips += delta
-        hand_luck = self._record_hand_luck(winner, final_hands, win_type=win_type)
+        hand_luck = self._record_hand_luck(
+            winner,
+            final_hands,
+            win_type=win_type,
+            settlement_scores=luck_settlement_scores,
+        )
 
         self.settlement = {
             "winner": winner,

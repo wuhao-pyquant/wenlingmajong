@@ -279,6 +279,12 @@ function battleRoomMetadata() {
   };
 }
 
+function currentBattleSeat() {
+  const account = battleAccountValue();
+  if (!account || !Array.isArray(state?.seats)) return null;
+  return state.seats.find((seat) => seat?.account === account) || null;
+}
+
 async function refreshBattleRoomSummary() {
   if (APP_MODE !== "battle" || battleRoomSummaryRefreshing || !battleTokenValue()) return battleRoomMetadata();
   const roomId = battleRoomIdValue();
@@ -1254,6 +1260,24 @@ function renderBattleLobbyOnly() {
     $("settlementPopup").innerHTML = "";
   }
   if ($("actionBar")) $("actionBar").innerHTML = '<span class="tag">请回大厅选择座位并准备</span>';
+  if ($("actionBar")) {
+    const bar = $("actionBar");
+    bar.innerHTML = "";
+    if (currentBattleSeat()) {
+      const ready = state?.ready_accounts?.includes(battleAccountValue());
+      const readyButton = document.createElement("button");
+      readyButton.className = ready ? "ready-toggle ready-off" : "ready-toggle gold";
+      readyButton.textContent = ready ? "取消准备" : "准备";
+      readyButton.addEventListener("click", () => newRound(false));
+      const label = document.createElement("span");
+      label.className = "tag";
+      label.textContent = ready ? "已准备，等待其他玩家" : "入座成功，准备后开始";
+      bar.appendChild(readyButton);
+      bar.appendChild(label);
+    } else {
+      bar.innerHTML = '<span class="tag">请回大厅选择座位并准备</span>';
+    }
+  }
   if ($("hand")) $("hand").innerHTML = "";
   if ($("history")) $("history").innerHTML = "";
   if ($("analysis")) $("analysis").innerHTML = "";
@@ -1316,6 +1340,7 @@ function centerSeatHudHtml(seat, position) {
 function renderStatus() {
   renderGameHeader();
   const wallToDrawGame = state.wall_to_draw_game ?? state.wall_remaining ?? "-";
+  const roomRound = roomRoundCount() || "-";
   const centerIndicatorMode = state.center_indicator_mode || (state.bao_phase ? "bao" : "de");
   const items = [
     ["庄家", playerBySeat(state.dealer)?.label || ""],
@@ -1336,19 +1361,22 @@ function renderStatus() {
   const center = $("tableCenterInfo");
   if (center) {
     const indicator = centerIndicatorMode === "bao" ? "包" : tileLabel(state.de_indicator);
+    const indicatorHtml = centerIndicatorMode === "bao"
+      ? `<span class="center-bao-mark">${escapeXml(indicator || "-")}</span>`
+      : `<span class="center-de-tile">${state.de_indicator ? tileHtml(state.de_indicator, "small", "center-indicator-tile") : escapeXml(indicator || "-")}</span>`;
     center.innerHTML = `
       <div class="center-hud-grid">
         ${centerSeatHudHtml(2, "top")}
         ${centerSeatHudHtml(3, "left")}
         <div class="center-core">
-          <div class="center-room-count">余牌 <strong>${escapeXml(wallToDrawGame)}</strong></div>
+          <div class="center-room-count">对局 <strong>${escapeXml(roomRound)}</strong></div>
           <div class="center-core-row">
             <div class="center-indicator-card">
               <span class="center-de-label">${escapeXml(centerIndicatorMode === "bao" ? "包牌" : "得牌")}</span>
-              <span class="${centerIndicatorMode === "bao" ? "center-bao-mark" : "center-de-tile"}">${escapeXml(indicator || "-")}</span>
+              ${indicatorHtml}
             </div>
             <div class="center-wall-remaining">
-              <span>余牌</span>
+              <span>荒牌</span>
               <strong>${escapeXml(wallToDrawGame)}</strong>
               <small>张</small>
             </div>
@@ -2146,7 +2174,7 @@ function renderPlayers() {
   const winnerBurst = winAnimating
     ? exceptionalLuckAnimating
       ? `<div class="winner-burst winner-leizi-burst winner-${seatClass(state.settlement.winner)}" data-win-animation="exceptional-luck" aria-hidden="true"><img src="${EXCEPTIONAL_LUCK_WIN_GIF_SRC}" alt="" /></div>`
-      : `<div class="winner-burst winner-${seatClass(state.settlement.winner)}" data-win-animation="normal" aria-hidden="true"><span>閼?/span></div>`
+      : `<div class="winner-burst winner-${seatClass(state.settlement.winner)}" data-win-animation="normal" aria-hidden="true"><span>胡</span></div>`
     : "";
   $("players").innerHTML = panels;
   const playerHud = $("playerHud");
@@ -2266,7 +2294,7 @@ function renderSettlementPopup() {
     const isDiscarder = settlement.discarder !== null && settlement.discarder !== undefined && Number(settlement.discarder) === scoreIndex;
     const limitReason = score.limit_reason ? `<span class="settlement-limit">${settlementText(score.limit_reason)}</span>` : "";
     const winnerBadge = isWinner ? `<span class="settlement-win-badge">${settlementText(settlementWinBadge(settlement))}</span>` : "";
-    const discarderBadge = isDiscarder ? `<span class="settlement-discarder-badge">閺€鍓у仏</span>` : "";
+    const discarderBadge = isDiscarder ? `<span class="settlement-discarder-badge">放铳</span>` : "";
     return `
       <div class="settlement-row${isWinner ? " settlement-winner-row" : ""}${isDiscarder ? " settlement-discarder-row" : ""}">
         <div class="settlement-row-head">
@@ -2521,6 +2549,19 @@ function renderActionsV2() {
   }
   if (pendingActionFeedback) {
     bar.innerHTML = `<span class="tag action-feedback">${escapeXml(pendingActionFeedback.message)}</span>`;
+    return;
+  }
+  if (!state.game_started && currentBattleSeat()) {
+    const ready = state?.ready_accounts?.includes(battleAccountValue());
+    const readyButton = document.createElement("button");
+    readyButton.className = ready ? "ready-toggle ready-off" : "ready-toggle gold";
+    readyButton.textContent = ready ? "取消准备" : "准备";
+    readyButton.addEventListener("click", () => newRound(false));
+    const label = document.createElement("span");
+    label.className = "tag";
+    label.textContent = ready ? "已准备，等待其他玩家" : "入座成功，准备后开始";
+    bar.appendChild(readyButton);
+    bar.appendChild(label);
     return;
   }
   if (state.phase === "round_over") {

@@ -78,14 +78,17 @@ variables:
 
 - `WENLING_DATA_DIR=/data`
 - `WENLING_ADMIN_USERNAME=<admin name>`
-- `WENLING_ADMIN_PASSWORD=<admin password>`
-- `WENLING_INVITE_CODES=7392,WL8K2`
+- `WENLING_ADMIN_PASSWORD=1234`
+- `WENLING_INVITE_CODES=WL1234,7392,WL8K2`
 - `WENLING_MAX_ROOMS=3`
 - `WENLING_DEFAULT_AI_POLICY=low`
 
 Zeabur injects `PORT`; the service reads it automatically. The first startup
 creates a fresh online database, initializes fixed AI accounts, creates or
 updates the admin account, and imports the initial invite codes.
+All human accounts use the fixed password `1234`; existing human account
+password hashes are rewritten on startup. The default invite code `WL1234` is
+always available and is filled into the registration page as a masked field.
 
 This release is intentionally single-instance. Do not horizontally scale it:
 room state is in memory and SQLite is mounted on one persistent volume.

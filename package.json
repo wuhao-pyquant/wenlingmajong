@@ -1,0 +1,7 @@
+{
+  "name": "wenling-lan-mobile-foundation",
+  "private": true,
+  "devDependencies": {
+    "playwright-core": "1.61.0"
+  }
+}

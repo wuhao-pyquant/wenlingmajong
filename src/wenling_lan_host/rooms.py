@@ -87,6 +87,7 @@ class RoomManager:
                 last_active_at=now,
             )
             self._rooms[room_id] = room
+            room.session.sit(owner, 0)
             return self._summary(room)
 
     def list_rooms(self, viewer: str | None = None) -> dict[str, Any]:

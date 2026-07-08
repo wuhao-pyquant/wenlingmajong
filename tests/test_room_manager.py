@@ -25,6 +25,8 @@ class RoomManagerTests(unittest.TestCase):
             room = manager.create_room("owner", "room one")
             self.assertEqual(room["owner_account"], "owner")
             self.assertEqual(room["ai_policy"], "low")
+            self.assertEqual(room["seats"][0]["account"], "owner")
+            self.assertEqual(room["ready_accounts"], [])
 
             with self.assertRaisesRegex(ValueError, "already owns"):
                 manager.create_room("owner", "room two")

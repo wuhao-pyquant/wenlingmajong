@@ -55,9 +55,9 @@ class HandLuckTests(unittest.TestCase):
             final_leizi_distance=2,
             supplement_draw_count=0,
         )
-        self.assertEqual(lucky.luck_percentile, 79.8)
-        self.assertEqual(stalled.luck_percentile, 73.3)
-        self.assertEqual(baseline.luck_percentile, 34.9)
+        self.assertEqual(lucky.luck_percentile, 79.9)
+        self.assertEqual(stalled.luck_percentile, 73.5)
+        self.assertEqual(baseline.luck_percentile, 25.2)
         self.assertEqual(lucky.categories["progress"], "-0.6~-0.3")
         self.assertEqual(lucky.categories["leizi_progress"], "-0.3~0")
         self.assertEqual(lucky.categories["leizi_win"], "0")
@@ -166,6 +166,60 @@ class HandLuckTests(unittest.TestCase):
             self.assertEqual(game.round_stats[1]["open_claim_count"], 1)
             self.assertEqual(game.round_stats[2]["open_claim_count"], 1)
             self.assertEqual(game.round_stats[3]["open_claim_count"], 1)
+
+    def test_only_fan_flowers_count_toward_round_flower_draw_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            game = WenlingMahjongGame(
+                PassPolicy(),
+                temp_dir,
+                human_seat=None,
+                persist_logs=False,
+                response_delay_sec=0,
+            )
+            game.dealer = 0
+            game.de_indicator = "zhong"
+            game.de_set = {"zhong"}
+            game.flower_set = {"bai", "fa", "rh1", "rh2"}
+
+            game._give_drawn_tile(0, "bai")
+            game._give_drawn_tile(0, "fa")
+            game._give_drawn_tile(0, "rh1")
+            game._give_drawn_tile(0, "rh2")
+            game._give_drawn_tile(0, "zhong")
+
+            self.assertEqual(game.round_stats[0]["de_draws"], 1)
+            self.assertEqual(game.round_stats[0]["fan_flower_draws"], 3)
+
+    def test_hand_luck_uses_settlement_fan_flower_count(self) -> None:
+        class RecordingScorer:
+            def __init__(self) -> None:
+                self.inner = default_hand_luck_scorer()
+                self.calls: list[dict] = []
+
+            def score(self, **kwargs):
+                self.calls.append(dict(kwargs))
+                return self.inner.score(**kwargs)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            scorer = RecordingScorer()
+            game = WenlingMahjongGame(
+                PassPolicy(),
+                temp_dir,
+                human_seat=None,
+                persist_logs=False,
+                response_delay_sec=0,
+                hand_luck_scorer=scorer,
+            )
+            hand = Counter({"m1": 2, "m2": 2, "m3": 2, "b1": 2, "b2": 2, "b3": 2, "t1": 2})
+            for player in game.players:
+                player.hand = Counter(hand)
+            game.players[0].flowers = ["bai", "fa", "zhong", "rh1"]
+            game.round_stats = [game._empty_round_stats() for _ in range(4)]
+            game.round_stats[0]["fan_flower_draws"] = 99
+
+            game._record_hand_luck(None)
+
+            self.assertEqual(scorer.calls[0]["fan_flower_draws"], 4)
 
     def test_win_and_draw_settlements_include_all_player_luck_scores(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

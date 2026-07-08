@@ -67,7 +67,10 @@ This is trusted-LAN HTTP. Account selection has no password and does not prevent
 ## Zeabur online lobby operations
 
 Use `/battle-login` for player login and registration. Registration requires
-an invite code. Use `/battle/admin` after logging in as the administrator to
+an invite code. The default invite code is `WL1234`, and the registration page
+fills it in as a masked value. All human accounts use the fixed password
+`1234`; existing human account password hashes are rewritten on service
+startup. Use `/battle/admin` after logging in as the administrator to
 generate invite codes, inspect online visitors, review accounts, monitor rooms,
 and close problem rooms.
 

@@ -7144,6 +7144,14 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
   color: #b42b22;
 }
 
+.auth-password-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .lobby-section-head {
   display: flex;
   justify-content: space-between;
@@ -7241,6 +7249,200 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
   font-weight: 800;
 }
 
+.auth-shell {
+  max-width: 860px;
+}
+
+.auth-status-card {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(31, 122, 82, 0.2);
+  border-radius: 8px;
+  background: rgba(230, 244, 235, 0.94);
+  color: var(--green-dark);
+}
+
+.auth-status-card.bad {
+  border-color: rgba(180, 43, 34, 0.35);
+  background: rgba(255, 244, 244, 0.94);
+  color: #b42b22;
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lobby-session-card {
+  margin-bottom: 16px;
+}
+
+.lobby-ai-policy-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--green-dark);
+  font-weight: 900;
+}
+
+.room-table-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.room-table-slot {
+  display: grid;
+  gap: 12px;
+  min-height: 320px;
+  padding: 14px;
+  border: 1px solid rgba(31, 122, 82, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(17, 72, 48, 0.08);
+}
+
+.room-table-slot:hover:not(:disabled) {
+  border-color: var(--green);
+  transform: translateY(-1px);
+}
+
+.room-table-slot:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.room-table-active {
+  background: #173b32;
+  color: #f7f1df;
+}
+
+.room-table-mine {
+  border-color: #f2d47a;
+  box-shadow: 0 0 0 2px rgba(242, 212, 122, 0.24), 0 12px 28px rgba(17, 72, 48, 0.18);
+}
+
+.room-table-head,
+.room-table-meta,
+.room-table-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.room-table-meta {
+  color: inherit;
+  opacity: 0.82;
+  font-size: 13px;
+}
+
+.room-table-icon {
+  position: relative;
+  display: block;
+  height: 190px;
+}
+
+.room-table-felt {
+  position: absolute;
+  inset: 38px 42px;
+  border: 10px solid #5b4630;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.08), transparent),
+    #1f7a52;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.16), 0 12px 22px rgba(0,0,0,0.16);
+}
+
+.room-table-seat {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid rgba(31, 122, 82, 0.22);
+  border-radius: 8px;
+  background: #f7f1df;
+  color: var(--green-dark);
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.room-table-active .room-table-seat {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(247, 241, 223, 0.95);
+}
+
+.room-table-seat b,
+.room-table-seat em {
+  display: block;
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+}
+
+.room-table-seat.empty {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.room-table-seat.ready {
+  border-color: #f2d47a;
+  background: #fff4c8;
+}
+
+.room-table-seat.mine {
+  border-color: var(--green);
+  background: #e4f4e9;
+  color: var(--green-dark);
+  font-weight: 900;
+}
+
+.room-table-seat:nth-of-type(2) {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.room-table-seat:nth-of-type(3) {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.room-table-seat:nth-of-type(4) {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.room-table-seat:nth-of-type(5) {
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.room-table-action-label {
+  font-weight: 900;
+}
+
+.table-ready-btn {
+  min-height: 34px;
+  border-color: #f2d47a;
+  background: #f2d47a;
+  color: #153528;
+  font-weight: 900;
+}
+
 .online-room-create-row,
 .admin-create-row {
   align-items: flex-end;
@@ -7311,6 +7513,11 @@ body.battle-app-mode .mahjong-table .seat-action-pop {
   .lobby-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .auth-grid,
+  .room-table-grid {
+    grid-template-columns: 1fr;
   }
 }
 

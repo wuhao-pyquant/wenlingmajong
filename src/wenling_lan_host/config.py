@@ -9,6 +9,7 @@ from typing import Mapping
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INVITE_CODE_RE = re.compile(r"^[A-Z0-9]{4,6}$")
+DEFAULT_INVITE_CODE = "WL1234"
 
 
 @dataclass(frozen=True)
@@ -28,14 +29,15 @@ class HostConfig:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "HostConfig":
         env = dict(os.environ if environ is None else environ)
-        invite_codes: list[str] = []
+        invite_codes: list[str] = [DEFAULT_INVITE_CODE]
         for raw_item in str(env.get("WENLING_INVITE_CODES", "")).split(","):
             code = raw_item.strip().upper()
             if not code:
                 continue
             if not INVITE_CODE_RE.fullmatch(code):
                 raise ValueError("WENLING_INVITE_CODES entries must be 4-6 uppercase letters or digits")
-            invite_codes.append(code)
+            if code not in invite_codes:
+                invite_codes.append(code)
         max_rooms = int(env.get("WENLING_MAX_ROOMS", "3") or "3")
         if max_rooms < 1 or max_rooms > 3:
             raise ValueError("WENLING_MAX_ROOMS must be between 1 and 3")

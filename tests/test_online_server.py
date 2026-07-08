@@ -28,7 +28,7 @@ class OnlineServerTests(unittest.TestCase):
             bind_port=0,
             expose_host_info=True,
             admin_username="root",
-            admin_password_hash=hash_password("admin123"),
+            admin_password_hash=hash_password("1234"),
             initial_invite_codes=["7392"],
             max_rooms=3,
             quiet_http_logs=True,
@@ -82,7 +82,7 @@ class OnlineServerTests(unittest.TestCase):
         finally:
             raised.exception.close()
 
-    def register_player(self, account: str, password: str = "secret123") -> dict:
+    def register_player(self, account: str, password: str = "1234") -> dict:
         return self.request_json(
             "/api/auth/register",
             method="POST",
@@ -93,12 +93,13 @@ class OnlineServerTests(unittest.TestCase):
         return self.request_json(
             "/api/auth/login",
             method="POST",
-            body={"account": "root", "password": "admin123"},
+            body={"account": "root", "password": "1234"},
         )
 
     def test_online_pages_load_expected_scripts(self) -> None:
         for path, expected in (
             ("/battle-login", "battle_lobby.js"),
+            ("/battle-lobby", "battle_lobby.js"),
             ("/battle", "battle_app.js"),
             ("/battle-admin", "battle_admin.js"),
             ("/battle/admin", "battle_admin.js"),
@@ -110,6 +111,8 @@ class OnlineServerTests(unittest.TestCase):
 
     def test_task6_review_owner_controls_frontend_contract(self) -> None:
         battle_html = (ROOT / "static" / "battle.html").read_text(encoding="utf-8")
+        login_html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")
+        lobby_html = (ROOT / "static" / "battle_lobby.html").read_text(encoding="utf-8")
         battle_app = (ROOT / "static" / "battle_app.js").read_text(encoding="utf-8")
         lobby_app = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
 
@@ -126,13 +129,61 @@ class OnlineServerTests(unittest.TestCase):
         self.assertIn('{ confirm: "CLOSE_ROOM" }', battle_app)
         self.assertIn("ROOM_SUMMARY_KEY", lobby_app)
         self.assertIn("saveRoomSummary", lobby_app)
-        self.assertIn("updateCreateRoomAvailability", lobby_app)
+        self.assertIn("renderTableSlots", lobby_app)
+        self.assertIn("createOrJoinTable", lobby_app)
         self.assertIn("owner_account", lobby_app)
         self.assertIn('"waiting"', lobby_app)
         self.assertIn('"round_over"', lobby_app)
         self.assertIn('"closing"', lobby_app)
+        self.assertIn('tileHtml(state.de_indicator, "small", "center-indicator-tile")', battle_app)
+        self.assertIn('class="center-de-tile"', battle_app)
+        self.assertNotIn('center-de-tile"}">${escapeXml(indicator || "-")}', battle_app)
+        self.assertIn('const roomRound = roomRoundCount() || "-"', battle_app)
+        self.assertIn('center-room-count">对局 <strong>${escapeXml(roomRound)}</strong>', battle_app)
+        self.assertIn("<span>荒牌</span>", battle_app)
+        self.assertNotIn('id="roomList"', login_html)
+        self.assertNotIn('id="roomNameInput"', login_html)
+        self.assertIn("推荐密码1234", login_html)
+        self.assertIn('id="inviteCodeInput"', login_html)
+        self.assertIn('invite.type = "password"', login_html)
+        self.assertIn('invite.value = "WL1234"', login_html)
+        self.assertIn('id="roomTableGrid"', lobby_html)
+        self.assertGreaterEqual(lobby_html.count('class="room-table-slot'), 3)
         self.assertNotIn("?{", battle_app)
         self.assertNotIn("?{", lobby_app)
+
+    def test_settlement_frontend_text_is_readable_chinese(self) -> None:
+        battle_app = (ROOT / "static" / "battle_app.js").read_text(encoding="utf-8")
+        settlement_chunk = battle_app[
+            battle_app.index("function fallbackBaseDetails"):
+            battle_app.index("function openPlayerStatsModal")
+        ]
+
+        for expected in (
+            "花牌",
+            "胡牌计划",
+            "按结算番型计分",
+            "无额外番型",
+            "座位",
+            "自摸",
+            "抢杠胡",
+            "点炮胡",
+            "查看结算",
+            "流局",
+            "放铳",
+            "胡牌",
+            "包赔",
+            "筹码变化",
+            "关闭",
+            "运气度",
+            "基础",
+            "番型",
+            "总分",
+        ):
+            self.assertIn(expected, settlement_chunk)
+
+        for broken in ("鑺", "鍒", "鐣", "鑳", "闁", "閺", "鍓", "绛圭爜", "鍏抽棴", "杩愭皵"):
+            self.assertNotIn(broken, settlement_chunk)
 
     def test_task6_admin_room_frontend_contract(self) -> None:
         admin_html = (ROOT / "static" / "battle_admin.html").read_text(encoding="utf-8")
@@ -164,10 +215,13 @@ class OnlineServerTests(unittest.TestCase):
         )
         room_id = created["room_id"]
         self.assertEqual(created["owner_account"], "alice")
+        self.assertEqual(created["seats"][0]["account"], "alice")
+        self.assertEqual(created["ready_accounts"], [])
 
         state = self.request_json(f"/api/battle/{room_id}/state", token=token)
         self.assertFalse(state["game_started"])
         self.assertEqual(state["room_id"], room_id)
+        self.assertEqual(state["seats"][0]["account"], "alice")
 
     def test_room_wait_heartbeat_ready_and_leave_routes(self) -> None:
         player = self.register_player("alice")
@@ -274,10 +328,11 @@ class OnlineServerTests(unittest.TestCase):
         seated = self.request_json(
             f"/api/battle/{room_id}/sit",
             method="POST",
-            body={"seat": 0, "room_generation": updated["room_generation"]},
+            body={"seat": 1, "room_generation": updated["room_generation"]},
             token=guest_token,
         )
-        self.assertEqual(seated["seats"][0]["account"], "bob")
+        self.assertEqual(seated["seats"][0]["account"], "alice")
+        self.assertEqual(seated["seats"][1]["account"], "bob")
 
         kicked = self.request_json(
             f"/api/lobby/rooms/{room_id}/kick",
@@ -337,11 +392,17 @@ class OnlineServerTests(unittest.TestCase):
                 method="POST",
                 body={"account": "alice", "password": "secret123"},
             )
-        self.assertEqual(
+        with self.expect_http_error(401):
             self.request_json(
                 "/api/auth/login",
                 method="POST",
                 body={"account": "alice", "password": "newpass123"},
+            )
+        self.assertEqual(
+            self.request_json(
+                "/api/auth/login",
+                method="POST",
+                body={"account": "alice", "password": "1234"},
             )["account"],
             "alice",
         )
@@ -364,7 +425,7 @@ class OnlineServerTests(unittest.TestCase):
             self.request_json(
                 "/api/auth/register",
                 method="POST",
-                body={"account": "charlie", "password": "secret123", "invite_code": "WL8K2"},
+                body={"account": "charlie", "password": "1234", "invite_code": "WL8K2"},
             )
 
     def test_admin_presence_includes_anonymous_visitors_and_logged_in_sessions(self) -> None:
@@ -372,7 +433,7 @@ class OnlineServerTests(unittest.TestCase):
         registered = self.request_json(
             "/api/auth/register",
             method="POST",
-            body={"account": "alice", "password": "secret123", "invite_code": "7392"},
+            body={"account": "alice", "password": "1234", "invite_code": "7392"},
             headers={"X-Visitor-ID": "alice-browser"},
         )
         login = self.login_admin()
@@ -438,7 +499,7 @@ class OnlineServerTests(unittest.TestCase):
         registered = self.request_json(
             "/api/auth/register",
             method="POST",
-            body={"account": "alice", "password": "secret123", "invite_code": "7392"},
+            body={"account": "alice", "password": "1234", "invite_code": "7392"},
             headers={"X-Visitor-ID": "alice-browser"},
         )
 

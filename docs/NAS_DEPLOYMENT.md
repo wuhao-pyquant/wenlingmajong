@@ -36,12 +36,17 @@ Edit `.env` and set:
 
 ```env
 WENLING_ADMIN_USERNAME=admin
-WENLING_ADMIN_PASSWORD=replace-with-a-strong-password
-WENLING_INVITE_CODES=7392,WL8K2
+WENLING_ADMIN_PASSWORD=1234
+WENLING_INVITE_CODES=WL1234,7392,WL8K2
 WENLING_MAX_ROOMS=3
 WENLING_DEFAULT_AI_POLICY=low
 CLOUDFLARE_TUNNEL_TOKEN=replace-with-cloudflare-tunnel-token
 ```
+
+All human accounts use the fixed password `1234`. Existing human account
+password hashes are rewritten to `1234` when the service starts. The default
+invite code `WL1234` is always imported and the registration page fills it in
+as a masked field.
 
 Start the containers:
 

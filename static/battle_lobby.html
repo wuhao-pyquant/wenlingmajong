@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>温岭麻将 选桌</title>
+    <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
+  </head>
+  <body class="standalone-page room-lobby-page">
+    <main class="standalone-shell online-lobby-shell">
+      <header class="standalone-head">
+        <div>
+          <h1>选桌入座</h1>
+          <p>点击空桌创建房间；点击已有房间自动落座并进入对战。</p>
+        </div>
+        <div class="standalone-links">
+          <a id="adminEntry" href="/battle-admin" hidden>管理后台</a>
+          <button id="logoutBtn" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <section class="standalone-card lobby-card lobby-session-card">
+        <div class="lobby-toolbar">
+          <div>
+            <strong id="currentAccountLabel">未登录</strong>
+            <span id="currentRoleLabel" class="tag"></span>
+          </div>
+          <label class="lobby-ai-policy-label">
+            新房间 AI
+            <select id="roomAiPolicySelect" class="wide-input battle-ai-policy-select">
+              <option value="low">低级 AI</option>
+              <option value="high">高级 AI</option>
+            </select>
+          </label>
+        </div>
+        <div id="lobbyMessage" class="lobby-message" aria-live="polite"></div>
+      </section>
+
+      <section class="room-table-grid" id="roomTableGrid" aria-label="房间桌位">
+        <button class="room-table-slot room-table-empty" type="button" data-slot-index="0"></button>
+        <button class="room-table-slot room-table-empty" type="button" data-slot-index="1"></button>
+        <button class="room-table-slot room-table-empty" type="button" data-slot-index="2"></button>
+      </section>
+    </main>
+    <script src="/battle_lobby.js?v=20260708-lobby-split-1"></script>
+  </body>
+</html>

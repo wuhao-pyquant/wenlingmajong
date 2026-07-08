@@ -18,10 +18,10 @@ from wenling_core import protocol_info
 from wenling_core.tile_efficiency import TileEfficiencyPolicyModel
 from wenling_core.tiles import TILE_BY_CODE, tile_name
 
-from .auth import AuthIdentity, PlayerSessionStore, hash_password
+from .auth import FIXED_ONLINE_PASSWORD, AuthIdentity, PlayerSessionStore, hash_password
 from .battle_app import BattleSession
 from .battle_db import BattleDatabase
-from .config import HostConfig
+from .config import DEFAULT_INVITE_CODE, HostConfig
 from .presence import PresenceTracker
 from .rooms import RoomManager
 
@@ -99,9 +99,16 @@ class BattleApplication:
         self.database = BattleDatabase(self.data_dir / "battle.sqlite3")
         if admin_password_hash:
             self.database.bootstrap_admin(admin_username, admin_password_hash)
-        for code in initial_invite_codes or []:
+        fixed_password_hash = hash_password(FIXED_ONLINE_PASSWORD)
+        self.database.set_all_human_passwords(fixed_password_hash)
+        seen_codes: set[str] = set()
+        for code in [DEFAULT_INVITE_CODE, *(initial_invite_codes or [])]:
+            normalized_code = str(code or "").strip().upper()
+            if not normalized_code or normalized_code in seen_codes:
+                continue
+            seen_codes.add(normalized_code)
             try:
-                self.database.create_invite_code(code, created_by=admin_username)
+                self.database.create_invite_code(normalized_code, created_by=admin_username)
             except ValueError:
                 pass
         self.player_sessions = PlayerSessionStore(self.database)
@@ -295,6 +302,9 @@ def make_handler(application: BattleApplication) -> type[BaseHTTPRequestHandler]
                     return
                 if path == "/battle-login":
                     self._file(application.static_dir / "battle_login.html")
+                    return
+                if path == "/battle-lobby":
+                    self._file(application.static_dir / "battle_lobby.html")
                     return
                 if path in {"/battle-admin", "/battle/admin"}:
                     self._file(application.static_dir / "battle_admin.html")
@@ -592,7 +602,7 @@ def make_handler(application: BattleApplication) -> type[BaseHTTPRequestHandler]
                         row = application.database.account(account)
                         if bool(row["is_ai"]):
                             raise ValueError("fixed AI account password cannot be reset")
-                        password_hash = hash_password(str(body.get("password") or ""))
+                        password_hash = hash_password(FIXED_ONLINE_PASSWORD)
                         with closing(application.database.connect()) as con, con:
                             con.execute(
                                 "UPDATE accounts SET password_hash = ? WHERE account_name = ?",

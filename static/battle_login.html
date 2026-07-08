@@ -3,57 +3,56 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <title>温岭麻将 对战大厅</title>
-    <link rel="stylesheet" href="/styles.css?v=20260707-online-lobby-1" />
+    <title>温岭麻将 登录</title>
+    <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
   </head>
-  <body class="standalone-page">
-    <main class="standalone-shell online-lobby-shell">
+  <body class="standalone-page auth-only-page">
+    <main class="standalone-shell online-lobby-shell auth-shell">
       <header class="standalone-head">
         <div>
           <h1>温岭麻将</h1>
-          <p>登录账号进入游戏大厅，或使用邀请码注册。</p>
-        </div>
-        <div class="standalone-links" id="adminEntry" hidden>
-          <a href="/battle-admin">管理后台</a>
+          <p>先登录或注册账号，成功后进入选桌大厅。</p>
         </div>
       </header>
 
-      <section class="standalone-card auth-card">
-        <h2>账号登录</h2>
-        <label>用户名 <input id="loginAccountInput" class="wide-input" autocomplete="username" /></label>
-        <label>密码 <input id="loginPasswordInput" class="wide-input" type="password" autocomplete="current-password" /></label>
-        <button id="loginBtn" class="primary" type="button">登录</button>
+      <section class="auth-status-card" aria-live="polite">
+        <strong id="authStatusTitle">未登录</strong>
+        <span id="authStatusDetail">请输入账号和密码。</span>
       </section>
 
-      <section class="standalone-card auth-card">
-        <h2>邀请码注册</h2>
-        <label>用户名 <input id="registerAccountInput" class="wide-input" maxlength="12" autocomplete="username" /></label>
-        <label>密码 <input id="registerPasswordInput" class="wide-input" type="password" autocomplete="new-password" /></label>
-        <label>邀请码 <input id="inviteCodeInput" class="wide-input invite-code-input" maxlength="6" autocomplete="off" /></label>
-        <button id="registerBtn" class="gold" type="button">注册并登录</button>
+      <section class="auth-grid">
+        <section class="standalone-card auth-card">
+          <h2>账号登录</h2>
+          <label>用户名 <input id="loginAccountInput" class="wide-input" autocomplete="username" /></label>
+          <label>密码 <input id="loginPasswordInput" class="wide-input" type="password" autocomplete="current-password" /></label>
+          <button id="loginBtn" class="primary" type="button">登录</button>
+        </section>
+
+        <section class="standalone-card auth-card">
+          <h2>邀请码注册</h2>
+          <label>用户名 <input id="registerAccountInput" class="wide-input" maxlength="12" autocomplete="username" /></label>
+          <label>密码 <input id="registerPasswordInput" class="wide-input" type="password" autocomplete="new-password" /></label>
+          <label>邀请码 <input id="inviteCodeInput" class="wide-input invite-code-input" maxlength="6" autocomplete="off" /></label>
+          <button id="registerBtn" class="gold" type="button">注册并登录</button>
+        </section>
       </section>
 
-      <section class="standalone-card lobby-card">
-        <div class="lobby-toolbar">
-          <div>
-            <strong id="currentAccountLabel">未登录</strong>
-            <span id="currentRoleLabel" class="tag"></span>
-          </div>
-          <button id="logoutBtn" type="button">退出登录</button>
-        </div>
-        <div class="battle-login-row online-room-create-row">
-          <input id="roomNameInput" class="wide-input" placeholder="房间名" />
-          <select id="roomAiPolicySelect" class="wide-input battle-ai-policy-select">
-            <option value="low">低级 AI</option>
-            <option value="high">高级 AI</option>
-          </select>
-          <button id="createRoomBtn" class="primary" type="button">创建房间</button>
-        </div>
-        <div id="roomList" class="online-room-list"></div>
-      </section>
-
+      <p class="auth-password-hint">推荐密码1234</p>
       <div id="lobbyMessage" class="lobby-message" aria-live="polite"></div>
     </main>
-    <script src="/battle_lobby.js?v=20260707-online-lobby-1"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const invite = document.getElementById("inviteCodeInput");
+        if (invite) {
+          invite.type = "password";
+          invite.value = "WL1234";
+        }
+        ["loginPasswordInput", "registerPasswordInput"].forEach((id) => {
+          const input = document.getElementById(id);
+          if (input) input.placeholder = "推荐密码1234";
+        });
+      });
+    </script>
+    <script src="/battle_lobby.js?v=20260708-lobby-split-1"></script>
   </body>
 </html>

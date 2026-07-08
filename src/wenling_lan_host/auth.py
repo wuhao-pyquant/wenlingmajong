@@ -12,6 +12,7 @@ from .battle_db import BattleDatabase
 
 
 PBKDF2_ITERATIONS = 210_000
+FIXED_ONLINE_PASSWORD = "1234"
 
 
 @dataclass(frozen=True)
@@ -27,8 +28,8 @@ class AuthIdentity:
 
 def hash_password(password: str) -> str:
     value = str(password or "")
-    if len(value) < 6:
-        raise ValueError("password must be at least 6 characters")
+    if len(value) < 4:
+        raise ValueError("password must be at least 4 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", value.encode("utf-8"), salt, PBKDF2_ITERATIONS)
     return "pbkdf2_sha256${}${}${}".format(
@@ -52,6 +53,11 @@ def verify_password(password: str, encoded_hash: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
+def require_fixed_online_password(password: str) -> None:
+    if str(password or "") != FIXED_ONLINE_PASSWORD:
+        raise ValueError("online account password must be 1234")
+
+
 class PlayerSessionStore:
     def __init__(self, database: BattleDatabase):
         self.database = database
@@ -60,10 +66,15 @@ class PlayerSessionStore:
         self._account_to_token: dict[str, str] = {}
 
     def register_player(self, account_name: str, password: str, invite_code: str) -> dict[str, Any]:
+        require_fixed_online_password(password)
         row = self.database.create_player_account(account_name, hash_password(password), invite_code)
         return self._issue(row)
 
     def login_password(self, account_name: str, password: str) -> dict[str, Any]:
+        try:
+            require_fixed_online_password(password)
+        except ValueError as exc:
+            raise PermissionError(str(exc)) from exc
         row = self.database.require_active_human_account(account_name)
         if not verify_password(password, str(row.get("password_hash") or "")):
             raise PermissionError("account or password incorrect")

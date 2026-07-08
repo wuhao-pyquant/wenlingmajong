@@ -1294,7 +1294,7 @@
     const wallX = coreX + coreW * 0.72;
     ctx.fillStyle = "rgba(202, 255, 223, 0.8)";
     ctx.font = `800 ${Math.max(10, Math.floor(coreH * 0.13))}px Microsoft YaHei, sans-serif`;
-    ctx.fillText("黄牌", wallX, coreY + coreH * 0.42);
+    ctx.fillText("荒牌", wallX, coreY + coreH * 0.42);
     ctx.fillStyle = "#f8fff1";
     ctx.font = `900 ${Math.max(26, Math.floor(coreH * 0.34))}px Microsoft YaHei, sans-serif`;
     ctx.fillText(String(hud.wallRemaining ?? "-"), wallX, coreY + coreH * 0.64);
