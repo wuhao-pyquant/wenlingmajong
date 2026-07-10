@@ -20,6 +20,7 @@ node_modules/
 .agents/
 .codex/
 .superpowers/
+.worktrees/
 android/
 android-host/.gradle/
 android-host/.idea/
