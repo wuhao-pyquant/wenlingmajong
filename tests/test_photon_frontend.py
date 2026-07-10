@@ -1184,6 +1184,7 @@ class PhotonFrontendTests(unittest.TestCase):
             "injectThree": False,
             "failRendererAfter": None,
             "failMaterialAfter": None,
+            "failAfterTimerConstruction": False,
         }
         config.update(overrides)
         return self.run_node_json(
@@ -1370,16 +1371,36 @@ class PhotonFrontendTests(unittest.TestCase):
             const timers = [];
             class Timer {{
               constructor() {{
+                this.previousTime = 0;
+                this.currentTime = 0;
+                this.startTime = now;
                 this.elapsed = 0;
+                this.delta = 0;
                 this.updateCalls = 0;
                 this.getElapsedCalls = 0;
                 this.resetCalls = 0;
                 this.disposeCalls = 0;
+                this.calls = [];
                 timers.push(this);
               }}
-              update() {{ this.elapsed = now / 1000; this.updateCalls += 1; }}
-              getElapsed() {{ this.getElapsedCalls += 1; return this.elapsed; }}
-              reset() {{ this.elapsed = 0; this.resetCalls += 1; }}
+              update() {{
+                this.calls.push('update');
+                this.previousTime = this.currentTime;
+                this.currentTime = now - this.startTime;
+                this.delta = this.currentTime - this.previousTime;
+                this.elapsed += this.delta;
+                this.updateCalls += 1;
+              }}
+              getElapsed() {{
+                this.calls.push('getElapsed');
+                this.getElapsedCalls += 1;
+                return this.elapsed / 1000;
+              }}
+              reset() {{
+                this.calls.push('reset');
+                this.currentTime = now - this.startTime;
+                this.resetCalls += 1;
+              }}
               dispose() {{ this.disposeCalls += 1; }}
             }}
             class WebGLRenderer {{
@@ -1435,6 +1456,12 @@ class PhotonFrontendTests(unittest.TestCase):
               source = source.replace(
                 'import("/vendor/three/three.module.min.js?v=0.185.1")',
                 'Promise.resolve(globalThis.__THREE__)',
+              );
+            }}
+            if (config.failAfterTimerConstruction) {{
+              source = source.replace(
+                'timer = new THREE.Timer();',
+                "timer = new THREE.Timer();\\n    throw new Error('timer construction follow-up failed');",
               );
             }}
             const sandbox = {{
@@ -1717,33 +1744,32 @@ class PhotonFrontendTests(unittest.TestCase):
         )
         self.assertEqual(payload, {"quality": "desktop", "rendererConstructs": 1})
 
-    def test_three_timer_contract_excludes_hidden_time_and_disposes_on_destroy(self) -> None:
+    def test_three_timer_accumulates_visible_frame_deltas_and_disposes_once(self) -> None:
         script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")
         self.assertNotIn("new THREE.Clock", script)
         self.assertIn("new THREE.Timer", script)
-        self.assertLess(script.index("timer.update()"), script.index("timer.getElapsed()"))
 
         payload = self.run_browser_probe(
             """
             const timer = timers[0];
-            const resetsAfterBoot = timer.resetCalls;
             runRendererFrames(2, 16);
-            const frameAnimation = {
-              frames: Number(root.dataset.photonFrames || 0),
-              updates: timer.updateCalls,
-              elapsedReads: timer.getElapsedCalls,
-            };
+            const elapsedBeforeHidden = timer.elapsed / 1000;
             document.hidden = true;
             dispatch(documentListeners, 'visibilitychange');
             advance(10000);
             document.hidden = false;
             dispatch(documentListeners, 'visibilitychange');
+            runRendererFrames(1, 16);
+            const elapsedAfterResume = timer.elapsed / 1000;
+            const calls = timer.calls;
             const resetsAfterResume = timer.resetCalls;
             window.WenlingPhotonScene.destroy();
+            window.WenlingPhotonScene.destroy();
             return {
-              resetsAfterBoot,
               resetsAfterResume,
-              frameAnimation,
+              elapsedBeforeHidden,
+              elapsedAfterResume,
+              calls,
               disposeCalls: timer.disposeCalls,
               listeners: listenerCount(),
             };
@@ -1754,12 +1780,34 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertEqual(
             payload,
             {
-                "resetsAfterBoot": 1,
                 "resetsAfterResume": 2,
-                "frameAnimation": {"frames": 2, "updates": 2, "elapsedReads": 2},
+                "elapsedBeforeHidden": 0.032,
+                "elapsedAfterResume": 0.048,
+                "calls": [
+                    "reset", "update", "getElapsed", "update", "getElapsed",
+                    "reset", "update", "getElapsed",
+                ],
                 "disposeCalls": 1,
                 "listeners": 0,
             },
+        )
+
+    def test_three_timer_disposes_after_construction_failure_before_layer_assignment(self) -> None:
+        payload = self.run_browser_probe(
+            """
+            return {
+              mode: root.dataset.photonMode,
+              timerCount: timers.length,
+              disposeCalls: timers[0]?.disposeCalls ?? 0,
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+            failAfterTimerConstruction=True,
+        )
+        self.assertEqual(
+            payload,
+            {"mode": "canvas", "timerCount": 1, "disposeCalls": 1},
         )
 
     def test_failed_three_rebuild_degrades_through_canvas_to_static(self) -> None:
