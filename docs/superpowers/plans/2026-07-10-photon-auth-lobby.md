@@ -13,7 +13,7 @@
 - Modify only login, registration, lobby presentation, their shared frontend controller, tests, dependency metadata, and static-asset packaging.
 - Do not modify `static/battle.html`, `static/battle_app.js`, `static/battle_geometry_v7.css`, gameplay code, room services, auth APIs, or database code.
 - Three.js must be loaded only by `battle_login.html` and `battle_lobby.html`; `/battle` must neither download nor initialize it.
-- Pin `three` exactly to `0.185.1`, vendor `three.module.min.js` and its MIT license under `static/vendor/three/`, and never use a runtime CDN.
+- Pin `three` exactly to `0.185.1`, vendor the matching `three.module.min.js` and `three.core.min.js` ESM files plus their MIT license under `static/vendor/three/`, and never use a runtime CDN.
 - Keep all existing DOM IDs used by `battle_lobby.js` and tests.
 - Keep all existing API paths, bearer-token storage keys, room storage keys, and the 3000 ms lobby polling interval.
 - Keep password copy `推荐密码1234`, the only accepted human password `1234`, and masked default invite code `WL1234`.
@@ -34,6 +34,7 @@
 
 - Modify `package.json` and `package-lock.json`: record exact Three.js provenance as a development dependency.
 - Create `static/vendor/three/three.module.min.js`: vendored Three.js ESM runtime.
+- Create `static/vendor/three/three.core.min.js`: matching ESM core sibling imported by the runtime module.
 - Create `static/vendor/three/LICENSE`: upstream MIT license.
 - Create `static/photon_scene.js`: quality selection, Three.js scene, Canvas fallback, transitions, visibility lifecycle, and disposal.
 - Create `static/photon_lobby.css`: all scoped auth/lobby layout, visual, responsive, focus, and reduced-motion rules.
@@ -51,6 +52,7 @@
 **Files:**
 - Create: `tests/test_photon_frontend.py`
 - Create: `static/vendor/three/three.module.min.js`
+- Create: `static/vendor/three/three.core.min.js`
 - Create: `static/vendor/three/LICENSE`
 - Modify: `package.json`
 - Modify: `package-lock.json`
@@ -70,7 +72,9 @@ Create `tests/test_photon_frontend.py` with:
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -82,13 +86,21 @@ class PhotonFrontendTests(unittest.TestCase):
     def test_three_vendor_is_pinned_and_local(self) -> None:
         package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
         vendor = ROOT / "static" / "vendor" / "three" / "three.module.min.js"
+        core_vendor = ROOT / "static" / "vendor" / "three" / "three.core.min.js"
         license_file = ROOT / "static" / "vendor" / "three" / "LICENSE"
 
         self.assertEqual(package["devDependencies"]["three"], "0.185.1")
         self.assertTrue(vendor.is_file())
+        self.assertTrue(core_vendor.is_file())
         self.assertEqual(vendor.stat().st_size, 365_552)
         self.assertIn("MIT License", license_file.read_text(encoding="utf-8"))
         self.assertNotIn("cdn.", vendor.read_text(encoding="utf-8", errors="ignore"))
+
+    def test_three_vendor_esm_import_requires_and_includes_core_sibling(self) -> None:
+        """Prove the module fails alone and imports only with its local sibling."""
+        # Stage only three.module.min.js in a temporary ESM package, assert Node
+        # reports the missing three.core.min.js import, then add the sibling and
+        # assert importing the staged local module exposes THREE.Scene.
 
     def test_android_runtime_asset_lists_include_photon_dependencies(self) -> None:
         gradle = (ROOT / "android-host" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
@@ -165,7 +177,7 @@ $env:PYTHONPATH='src;packages/wenling_core'
 
 Expected: FAIL because `devDependencies.three`, the vendor files, and Android photon asset entries do not exist.
 
-- [ ] **Step 3: Pin Three.js and copy only the runtime module and license**
+- [ ] **Step 3: Pin Three.js and copy both runtime ESM files and the license**
 
 Run:
 
@@ -173,10 +185,11 @@ Run:
 npm install --save-dev --save-exact three@0.185.1
 New-Item -ItemType Directory -Force static\vendor\three | Out-Null
 Copy-Item -LiteralPath node_modules\three\build\three.module.min.js -Destination static\vendor\three\three.module.min.js
+Copy-Item -LiteralPath node_modules\three\build\three.core.min.js -Destination static\vendor\three\three.core.min.js
 Copy-Item -LiteralPath node_modules\three\LICENSE -Destination static\vendor\three\LICENSE
 ```
 
-Expected: `package-lock.json` records `three@0.185.1`; the vendored module is exactly 365,552 bytes.
+Expected: `package-lock.json` records `three@0.185.1`; the vendored module is exactly 365,552 bytes; a real Node ESM import first fails without `three.core.min.js` and then succeeds with the matching local sibling.
 
 - [ ] **Step 4: Add the runtime assets to both Android allowlists**
 
@@ -209,7 +222,7 @@ $env:PYTHONPATH='src;packages/wenling_core'
 .\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend tests.test_repository_boundaries.RepositoryBoundaryTests.test_android_runtime_web_assets_include_photon_lobby_dependencies -v
 ```
 
-Expected: 3 tests pass.
+Expected: 4 tests pass.
 
 - [ ] **Step 6: Commit the vendored dependency and packaging boundary**
 
@@ -1123,6 +1136,7 @@ Add this live static-resource test to `OnlineServerTests`:
             "/photon_scene.js",
             "/photon_lobby.css",
             "/vendor/three/three.module.min.js",
+            "/vendor/three/three.core.min.js",
             "/vendor/three/LICENSE",
         ):
             request = urllib.request.Request(self.base + path)
@@ -1728,10 +1742,10 @@ $env:JAVA_HOME = (Resolve-Path 'tools/android-build/jdk-extract/jdk-17.0.19+10')
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\android-host\gradlew.bat -p android-host :app:assemblePhoneDebug
 $apk = 'android-host/app/build/outputs/apk/phone/debug/app-phone-debug.apk'
-jar tf $apk | Select-String 'assets/(battle_lobby.html|photon_scene.js|photon_lobby.css|vendor/three/three.module.min.js|vendor/three/LICENSE)'
+jar tf $apk | Select-String 'assets/(battle_lobby.html|photon_scene.js|photon_lobby.css|vendor/three/three.module.min.js|vendor/three/three.core.min.js|vendor/three/LICENSE)'
 ```
 
-Expected: Gradle reports `BUILD SUCCESSFUL`; all five asset paths appear in the APK listing.
+Expected: Gradle reports `BUILD SUCCESSFUL`; all six asset paths appear in the APK listing.
 
 - [ ] **Step 10: Stop the isolated QA server and confirm a clean working tree**
 

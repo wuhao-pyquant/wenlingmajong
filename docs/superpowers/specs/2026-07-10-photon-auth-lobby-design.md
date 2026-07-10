@@ -48,7 +48,7 @@
 ### 依赖
 
 - 固定使用 `three@0.185.1`，MIT License。
-- 将 Three.js ESM 文件和许可证保存在 `static/vendor/three/`。
+- 将匹配的 Three.js ESM 文件 `three.module.min.js`、`three.core.min.js` 和许可证保存在 `static/vendor/three/`；模块文件通过相对导入加载核心 sibling。
 - 页面只从本机静态路径加载依赖，不使用 CDN。
 
 ### 新增模块
@@ -63,6 +63,8 @@
   - 所有规则限定在 `.photon-auth-page` 和 `.photon-lobby-page` 下。
 - `static/vendor/three/three.module.min.js`
   - 本地固定版本的 Three.js ESM 文件。
+- `static/vendor/three/three.core.min.js`
+  - 与模块文件匹配、由其相对导入的 Three.js ESM 核心文件。
 - `static/vendor/three/LICENSE`
   - Three.js MIT License。
 
