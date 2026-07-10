@@ -186,6 +186,7 @@
     let layer = null;
     let resizeCallback = null;
     let contextLossCallback = null;
+    let timer = null;
 
     function safely(callback) {
       try { callback(); } catch { /* Continue releasing the remaining resources. */ }
@@ -231,6 +232,8 @@
         safely(() => canvas.remove?.());
         safely(() => { canvas.width = 0; canvas.height = 0; });
       }
+      safely(() => timer?.dispose());
+      timer = null;
       safely(() => renderer.dispose());
       safely(() => renderer.domElement.remove());
     }
@@ -322,7 +325,7 @@
     scene.add(tileGroup);
 
     const baseParticlePositions = particlePositions.slice();
-    const clock = new THREE.Clock();
+    timer = new THREE.Timer();
     let sampleStartedAt = performance.now();
     let sampledFrames = 0;
     let restartScheduled = false;
@@ -373,7 +376,8 @@
     }
 
     function renderFrame() {
-      const elapsed = clock.getElapsedTime();
+      timer.update();
+      const elapsed = timer.getElapsed();
       const now = performance.now();
       const boosted = now < effectBoostUntil;
       for (let index = 0; index < budget.particles; index += 1) {
@@ -429,6 +433,7 @@
       },
       resume() {
         if (animationRunning || restartScheduled || document.hidden || destroyed) return;
+        timer.reset();
         sampleStartedAt = performance.now();
         sampledFrames = 0;
         animationRunning = true;

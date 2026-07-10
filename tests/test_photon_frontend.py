@@ -1367,7 +1367,21 @@ class PhotonFrontendTests(unittest.TestCase):
               }}
               dispose() {{ this.disposed = true; }}
             }}
-            class Clock {{ getElapsedTime() {{ return now / 1000; }} }}
+            const timers = [];
+            class Timer {{
+              constructor() {{
+                this.elapsed = 0;
+                this.updateCalls = 0;
+                this.getElapsedCalls = 0;
+                this.resetCalls = 0;
+                this.disposeCalls = 0;
+                timers.push(this);
+              }}
+              update() {{ this.elapsed = now / 1000; this.updateCalls += 1; }}
+              getElapsed() {{ this.getElapsedCalls += 1; return this.elapsed; }}
+              reset() {{ this.elapsed = 0; this.resetCalls += 1; }}
+              dispose() {{ this.disposeCalls += 1; }}
+            }}
             class WebGLRenderer {{
               constructor() {{
                 rendererConstructs += 1;
@@ -1391,7 +1405,7 @@ class PhotonFrontendTests(unittest.TestCase):
               BufferGeometry, BufferAttribute, PointsMaterial: Material, Points,
               LineBasicMaterial: Material, LineSegments, AmbientLight,
               DirectionalLight, PointLight, CanvasTexture, Group, BoxGeometry,
-              MeshStandardMaterial: Material, Mesh, Clock,
+              MeshStandardMaterial: Material, Mesh, Timer,
               SRGBColorSpace: 'srgb', AdditiveBlending: 'additive',
             }};
 
@@ -1702,6 +1716,51 @@ class PhotonFrontendTests(unittest.TestCase):
             injectThree=True,
         )
         self.assertEqual(payload, {"quality": "desktop", "rendererConstructs": 1})
+
+    def test_three_timer_contract_excludes_hidden_time_and_disposes_on_destroy(self) -> None:
+        script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")
+        self.assertNotIn("new THREE.Clock", script)
+        self.assertIn("new THREE.Timer", script)
+        self.assertLess(script.index("timer.update()"), script.index("timer.getElapsed()"))
+
+        payload = self.run_browser_probe(
+            """
+            const timer = timers[0];
+            const resetsAfterBoot = timer.resetCalls;
+            runRendererFrames(2, 16);
+            const frameAnimation = {
+              frames: Number(root.dataset.photonFrames || 0),
+              updates: timer.updateCalls,
+              elapsedReads: timer.getElapsedCalls,
+            };
+            document.hidden = true;
+            dispatch(documentListeners, 'visibilitychange');
+            advance(10000);
+            document.hidden = false;
+            dispatch(documentListeners, 'visibilitychange');
+            const resetsAfterResume = timer.resetCalls;
+            window.WenlingPhotonScene.destroy();
+            return {
+              resetsAfterBoot,
+              resetsAfterResume,
+              frameAnimation,
+              disposeCalls: timer.disposeCalls,
+              listeners: listenerCount(),
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+        )
+        self.assertEqual(
+            payload,
+            {
+                "resetsAfterBoot": 1,
+                "resetsAfterResume": 2,
+                "frameAnimation": {"frames": 2, "updates": 2, "elapsedReads": 2},
+                "disposeCalls": 1,
+                "listeners": 0,
+            },
+        )
 
     def test_failed_three_rebuild_degrades_through_canvas_to_static(self) -> None:
         canvas = self.run_browser_probe(
