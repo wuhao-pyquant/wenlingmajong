@@ -55,6 +55,19 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertNotIn('<button class="room-table-slot', html)
         self.assertIn('<article class="room-table-slot', html)
 
+    def test_photon_entry_pages_share_the_final_cache_token(self) -> None:
+        assets = (
+            "/photon_lobby.css",
+            "/photon_scene.js",
+            "/battle_lobby.js",
+        )
+        for page in ("battle_login.html", "battle_lobby.html"):
+            with self.subTest(page=page):
+                html = (ROOT / "static" / page).read_text(encoding="utf-8")
+                for asset in assets:
+                    self.assertIn(f"{asset}?v=20260711-photon-2", html)
+                self.assertNotIn("20260710-photon-1", html)
+
     def test_auth_page_uses_photon_stage_and_preserves_contract_ids(self) -> None:
         html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
@@ -63,8 +76,8 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn('class="standalone-page auth-only-page photon-auth-page"', html)
         self.assertIn('id="photonSceneRoot"', html)
         self.assertIn('data-page="auth"', html)
-        self.assertIn('/photon_lobby.css?v=20260710-photon-1', html)
-        self.assertIn('/photon_scene.js?v=20260710-photon-1', html)
+        self.assertIn('/photon_lobby.css?v=20260711-photon-2', html)
+        self.assertIn('/photon_scene.js?v=20260711-photon-2', html)
         self.assertIn('role="tablist"', html)
         self.assertIn('data-auth-mode="login"', html)
         self.assertIn('data-auth-mode="register"', html)
