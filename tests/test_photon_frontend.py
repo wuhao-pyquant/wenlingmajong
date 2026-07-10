@@ -719,6 +719,73 @@ class PhotonFrontendTests(unittest.TestCase):
             },
         )
 
+    def test_three_listener_ownership_returns_to_baseline_across_replacement(self) -> None:
+        direct_destroy = self.run_browser_probe(
+            """
+            const beforeDestroy = {
+              resize: windowListeners.get('resize')?.size || 0,
+              contextLoss: renderers[0].domElement.listenerCount(),
+            };
+            window.WenlingPhotonScene.destroy();
+            return {
+              beforeDestroy,
+              afterDestroy: {
+                resize: windowListeners.get('resize')?.size || 0,
+                contextLoss: renderers[0].domElement.listenerCount(),
+              },
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+        )
+
+        replacement = self.run_browser_probe(
+            """
+            runRendererFrames(1, 2500);
+            runTimers();
+            const afterReplacement = {
+              rendererCount: renderers.length,
+              resize: windowListeners.get('resize')?.size || 0,
+              oldContextLoss: renderers[0].domElement.listenerCount(),
+              newContextLoss: renderers[1].domElement.listenerCount(),
+            };
+            window.WenlingPhotonScene.destroy();
+            return {
+              afterReplacement,
+              afterDestroy: {
+                resize: windowListeners.get('resize')?.size || 0,
+                oldContextLoss: renderers[0].domElement.listenerCount(),
+                newContextLoss: renderers[1].domElement.listenerCount(),
+              },
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+        )
+
+        self.assertEqual(
+            {"directDestroy": direct_destroy, "replacement": replacement},
+            {
+                "directDestroy": {
+                    "beforeDestroy": {"resize": 1, "contextLoss": 1},
+                    "afterDestroy": {"resize": 0, "contextLoss": 0},
+                },
+                "replacement": {
+                    "afterReplacement": {
+                        "rendererCount": 2,
+                        "resize": 1,
+                        "oldContextLoss": 0,
+                        "newContextLoss": 1,
+                    },
+                    "afterDestroy": {
+                        "resize": 0,
+                        "oldContextLoss": 0,
+                        "newContextLoss": 0,
+                    },
+                },
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -184,6 +184,8 @@
     let animationRunning = false;
     let qualityTimerId = null;
     let layer = null;
+    let resizeCallback = null;
+    let contextLossCallback = null;
 
     function safely(callback) {
       try { callback(); } catch { /* Continue releasing the remaining resources. */ }
@@ -215,11 +217,11 @@
       animationRunning = false;
       safely(() => renderer.setAnimationLoop(null));
       if (contextLossListening) {
-        safely(() => renderer.domElement.removeEventListener("webglcontextlost", onContextLost));
+        safely(() => renderer.domElement.removeEventListener("webglcontextlost", contextLossCallback));
         contextLossListening = false;
       }
       if (resizeListening) {
-        safely(() => window.removeEventListener("resize", resize));
+        safely(() => window.removeEventListener("resize", resizeCallback));
         resizeListening = false;
       }
       for (const texture of ownedTextures) safely(() => texture.dispose?.());
@@ -325,13 +327,13 @@
     let sampledFrames = 0;
     let restartScheduled = false;
 
-    function resize() {
+    resizeCallback = function resize() {
       const width = Math.max(1, root.clientWidth);
       const height = Math.max(1, root.clientHeight);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-    }
+    };
 
     function updateLinks() {
       let linkCount = 0;
@@ -406,18 +408,18 @@
       }
     }
 
-    function onContextLost(event) {
+    contextLossCallback = function onContextLost(event) {
       event.preventDefault();
       if (!destroyed) startCanvasFallback();
-    }
+    };
 
     root.replaceChildren(renderer.domElement);
     setRootMode("three", quality);
-    resize();
+    resizeCallback();
+    window.addEventListener("resize", resizeCallback);
     resizeListening = true;
-    window.addEventListener("resize", resize);
+    renderer.domElement.addEventListener("webglcontextlost", contextLossCallback);
     contextLossListening = true;
-    renderer.domElement.addEventListener("webglcontextlost", onContextLost);
 
     layer = {
       pause() {
