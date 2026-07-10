@@ -12,6 +12,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhotonFrontendTests(unittest.TestCase):
+    @staticmethod
+    def css_at_rule_block(css: str, at_rule: str) -> str:
+        start = css.index(at_rule)
+        open_brace = css.index("{", start)
+        depth = 0
+        for index in range(open_brace, len(css)):
+            if css[index] == "{":
+                depth += 1
+            elif css[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return css[start:index + 1]
+        raise AssertionError(f"Unterminated CSS at-rule: {at_rule}")
+
     def test_lobby_page_uses_semantic_room_articles_and_photon_updates(self) -> None:
         html = (ROOT / "static" / "battle_lobby.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
@@ -843,7 +857,7 @@ class PhotonFrontendTests(unittest.TestCase):
 
     def test_lobby_phone_css_uses_one_contained_column(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
-        phone = css[css.rfind("@media (max-width: 760px)"):]
+        phone = self.css_at_rule_block(css, "@media (max-width: 760px)")
         self.assertIn("@media (max-width: 760px)", phone)
         self.assertIn(".photon-lobby-page .photon-room-grid", phone)
         self.assertIn("grid-template-columns: minmax(0, 1fr)", phone)
@@ -853,11 +867,67 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn(".photon-lobby-page .room-table-icon", phone)
         self.assertIn("max-width: 360px", phone)
 
+    def test_photon_css_separates_narrow_layout_from_coarse_touch_targets(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+        narrow = self.css_at_rule_block(css, "@media (max-width: 760px)")
+        self.assertIn("@media (pointer: coarse) {", css)
+        coarse = self.css_at_rule_block(css, "@media (pointer: coarse)")
+
+        self.assertNotIn("@media (max-width: 760px), (pointer: coarse)", css)
+        self.assertIn(".photon-auth-page .photon-auth-stage", narrow)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", narrow)
+        self.assertIn(".photon-lobby-page .photon-room-grid", narrow)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", narrow)
+        self.assertNotIn("grid-template-columns", coarse)
+
+        for target in (
+            ".photon-auth-page .photon-auth-tabs button",
+            ".photon-auth-page .photon-primary-action",
+            ".photon-lobby-page .photon-account-cluster a",
+            ".photon-lobby-page .photon-account-cluster button",
+            ".photon-lobby-page [data-ai-policy]",
+            ".photon-lobby-page .room-primary-action",
+            ".photon-lobby-page .table-ready-btn",
+        ):
+            self.assertIn(target, coarse)
+        self.assertEqual(coarse.count("min-height: 44px"), 7)
+
+    def test_photon_css_keeps_hidden_and_messages_readable(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+        hidden = ".photon-auth-page [hidden],\n.photon-lobby-page [hidden]"
+
+        self.assertIn(hidden, css)
+        self.assertIn("display: none !important", css[css.index(hidden):])
+        self.assertGreater(css.index(hidden), css.index(".photon-lobby-page .photon-account-cluster a"))
+
+        for expected in (
+            ".photon-auth-page .photon-auth-status,",
+            ".photon-lobby-page .photon-lobby-message",
+            "data-photon-status=\"loading\"",
+            "data-photon-status=\"success\"",
+            "data-photon-status=\"error\"",
+            "color: #dfffff",
+            "color: #dbffe9",
+            "color: #ffe1de",
+            "background: rgba(3,15,18,.9)",
+        ):
+            self.assertIn(expected, css)
+
+    def test_photon_css_uses_fixed_heading_sizes_without_viewport_font_scaling(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+
+        self.assertIn(".photon-auth-page .photon-auth-copy h1", css)
+        self.assertIn("font-size: 72px", css)
+        self.assertIn(".photon-lobby-page .photon-lobby-heading h1", css)
+        self.assertIn("font-size: 56px", css)
+        self.assertNotRegex(css, r"font-size:\s*[^;{}]*\\bvw\\b")
+
     def test_photon_css_adds_scoped_accessible_responsive_state_polish(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
 
         for expected in (
-            "@media (max-width: 760px), (pointer: coarse)",
+            "@media (max-width: 760px)",
+            "@media (pointer: coarse)",
             "@media (max-height: 520px) and (orientation: landscape)",
             ".photon-auth-page :is(button, input):focus-visible",
             ".photon-lobby-page :is(button, a):focus-visible",
