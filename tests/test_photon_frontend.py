@@ -65,7 +65,8 @@ class PhotonFrontendTests(unittest.TestCase):
             with self.subTest(page=page):
                 html = (ROOT / "static" / page).read_text(encoding="utf-8")
                 for asset in assets:
-                    self.assertIn(f"{asset}?v=20260711-photon-2", html)
+                    self.assertIn(f"{asset}?v=20260711-photon-3", html)
+                self.assertNotIn("20260711-photon-2", html)
                 self.assertNotIn("20260710-photon-1", html)
 
     def test_auth_page_uses_photon_stage_and_preserves_contract_ids(self) -> None:
@@ -76,8 +77,8 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn('class="standalone-page auth-only-page photon-auth-page"', html)
         self.assertIn('id="photonSceneRoot"', html)
         self.assertIn('data-page="auth"', html)
-        self.assertIn('/photon_lobby.css?v=20260711-photon-2', html)
-        self.assertIn('/photon_scene.js?v=20260711-photon-2', html)
+        self.assertIn('/photon_lobby.css?v=20260711-photon-3', html)
+        self.assertIn('/photon_scene.js?v=20260711-photon-3', html)
         self.assertIn('role="tablist"', html)
         self.assertIn('data-auth-mode="login"', html)
         self.assertIn('data-auth-mode="register"', html)
@@ -1193,6 +1194,7 @@ class PhotonFrontendTests(unittest.TestCase):
             "webgl2": False,
             "canvas2dLimit": None,
             "coarse": False,
+            "reducedMotion": False,
             "width": 1280,
             "injectThree": False,
             "failRendererAfter": None,
@@ -1291,7 +1293,11 @@ class PhotonFrontendTests(unittest.TestCase):
               innerWidth: config.width,
               devicePixelRatio: 2,
               matchMedia(query) {{
-                return {{matches: query.includes('pointer') ? config.coarse : false}};
+                return {{
+                  matches: query.includes('pointer')
+                    ? config.coarse
+                    : query.includes('prefers-reduced-motion') && config.reducedMotion,
+                }};
               }},
               requestAnimationFrame(callback) {{
                 const handle = nextHandle++;
@@ -1617,6 +1623,34 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertEqual(payload["mobileBudget"]["particles"], 110)
         self.assertEqual(payload["mobileBudget"]["maxLinks"], 420)
         self.assertEqual(payload["mobileBudget"]["pixelRatio"], 1.2)
+
+    def test_reduced_motion_transitions_resolve_without_timers(self) -> None:
+        payload = self.run_browser_probe(
+            """
+            let authSettled = false;
+            let lobbySettled = false;
+            window.WenlingPhotonScene.playAuthSuccess().then(() => { authSettled = true; });
+            window.WenlingPhotonScene.playLobbyReveal().then(() => { lobbySettled = true; });
+            await Promise.resolve();
+            return {
+              mode: root.dataset.photonMode,
+              timers: timerCallbacks.size,
+              authSettled,
+              lobbySettled,
+              transition: root.dataset.photonTransition || null,
+            };
+            """,
+            reducedMotion=True,
+            webgl2=True,
+            injectThree=True,
+        )
+        self.assertEqual(payload, {
+            "mode": "static",
+            "timers": 0,
+            "authSettled": True,
+            "lobbySettled": True,
+            "transition": None,
+        })
 
     def test_scene_runtime_has_pause_dispose_and_fallback_contracts(self) -> None:
         script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")

@@ -88,7 +88,7 @@
   }
 
   function sceneTransition(name, duration) {
-    if (destroyed) return Promise.resolve();
+    if (destroyed || root.dataset.photonMode === "static") return Promise.resolve();
     root.dataset.photonTransition = name;
     effectBoostUntil = performance.now() + duration;
     return wait(duration).finally(() => {
