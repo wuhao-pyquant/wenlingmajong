@@ -60,6 +60,14 @@
     return timerId;
   }
 
+  function cancelTimer(timerId) {
+    if (!pendingTimers.has(timerId)) return;
+    const settle = pendingTimers.get(timerId);
+    window.clearTimeout(timerId);
+    pendingTimers.delete(timerId);
+    settle?.();
+  }
+
   function wait(ms) {
     if (destroyed) return Promise.resolve();
     return new Promise((resolve) => {
@@ -166,6 +174,66 @@
     disposeActiveLayer();
     const budget = PHOTON_BUDGETS[quality];
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: quality === "desktop", powerPreference: "high-performance" });
+    const ownedGeometries = new Set();
+    const ownedMaterials = new Set();
+    const ownedTextures = new Set();
+    const ownedCanvases = new Set();
+    let resizeListening = false;
+    let contextLossListening = false;
+    let cleaned = false;
+    let animationRunning = false;
+    let qualityTimerId = null;
+    let layer = null;
+
+    function safely(callback) {
+      try { callback(); } catch { /* Continue releasing the remaining resources. */ }
+    }
+
+    function ownGeometry(geometry) {
+      ownedGeometries.add(geometry);
+      return geometry;
+    }
+
+    function ownMaterial(material) {
+      ownedMaterials.add(material);
+      return material;
+    }
+
+    function ownTexture(texture) {
+      ownedTextures.add(texture);
+      return texture;
+    }
+
+    function ownCanvas(canvas) {
+      ownedCanvases.add(canvas);
+      return canvas;
+    }
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      animationRunning = false;
+      safely(() => renderer.setAnimationLoop(null));
+      if (contextLossListening) {
+        safely(() => renderer.domElement.removeEventListener("webglcontextlost", onContextLost));
+        contextLossListening = false;
+      }
+      if (resizeListening) {
+        safely(() => window.removeEventListener("resize", resize));
+        resizeListening = false;
+      }
+      for (const texture of ownedTextures) safely(() => texture.dispose?.());
+      for (const material of ownedMaterials) safely(() => material.dispose?.());
+      for (const geometry of ownedGeometries) safely(() => geometry.dispose?.());
+      for (const canvas of ownedCanvases) {
+        safely(() => canvas.remove?.());
+        safely(() => { canvas.width = 0; canvas.height = 0; });
+      }
+      safely(() => renderer.dispose());
+      safely(() => renderer.domElement.remove());
+    }
+
+    try {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, budget.pixelRatio));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x04090b, 0);
@@ -175,7 +243,7 @@
     const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 80);
     camera.position.set(0, 0, 12);
 
-    const particleGeometry = new THREE.BufferGeometry();
+    const particleGeometry = ownGeometry(new THREE.BufferGeometry());
     const particlePositions = new Float32Array(budget.particles * 3);
     for (let i = 0; i < budget.particles; i += 1) {
       particlePositions[i * 3] = (Math.random() - 0.5) * 18;
@@ -183,15 +251,15 @@
       particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 8;
     }
     particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-    const particleMaterial = new THREE.PointsMaterial({ color: 0x68f5ff, size: quality === "mobile" ? 0.055 : 0.045, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const particleMaterial = ownMaterial(new THREE.PointsMaterial({ color: 0x68f5ff, size: quality === "mobile" ? 0.055 : 0.045, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
     const particles = new THREE.Points(particleGeometry, particleMaterial);
     scene.add(particles);
 
-    const linkGeometry = new THREE.BufferGeometry();
+    const linkGeometry = ownGeometry(new THREE.BufferGeometry());
     const linkPositions = new Float32Array(budget.maxLinks * 6);
     linkGeometry.setAttribute("position", new THREE.BufferAttribute(linkPositions, 3));
     linkGeometry.setDrawRange(0, 0);
-    const linkMaterial = new THREE.LineBasicMaterial({ color: 0x4cb0be, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending });
+    const linkMaterial = ownMaterial(new THREE.LineBasicMaterial({ color: 0x4cb0be, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending }));
     const links = new THREE.LineSegments(linkGeometry, linkMaterial);
     scene.add(links);
 
@@ -211,7 +279,7 @@
     }
 
     function tileTexture(glyph, glyphColor) {
-      const canvas = document.createElement("canvas");
+      const canvas = ownCanvas(document.createElement("canvas"));
       canvas.width = 256;
       canvas.height = 320;
       const context = canvas.getContext("2d");
@@ -225,23 +293,23 @@
       context.textAlign = "center";
       context.textBaseline = "middle";
       context.fillText(glyph, canvas.width / 2, canvas.height / 2 + 5);
-      const texture = new THREE.CanvasTexture(canvas);
+      const texture = ownTexture(new THREE.CanvasTexture(canvas));
       texture.colorSpace = THREE.SRGBColorSpace;
       return texture;
     }
 
     const tileGroup = new THREE.Group();
     tileGroup.position.set(root.dataset.page === "lobby" ? 2.5 : 2.1, 0.25, 0);
-    const tileGeometry = new THREE.BoxGeometry(1.2, 1.6, 0.18);
+    const tileGeometry = ownGeometry(new THREE.BoxGeometry(1.2, 1.6, 0.18));
     const glyphs = [
       ["發", "#167c61"],
       ["中", "#d44842"],
       ["白", "#173b3c"],
     ];
     const tiles = glyphs.map(([glyph, color], index) => {
-      const front = new THREE.MeshStandardMaterial({ map: tileTexture(glyph, color), roughness: 0.36, metalness: 0.06 });
-      const side = new THREE.MeshStandardMaterial({ color: 0xc9f6ef, roughness: 0.42, metalness: 0.08 });
-      const back = new THREE.MeshStandardMaterial({ color: 0x123f3d, emissive: 0x0b5f61, emissiveIntensity: 0.22 });
+      const front = ownMaterial(new THREE.MeshStandardMaterial({ map: tileTexture(glyph, color), roughness: 0.36, metalness: 0.06 }));
+      const side = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xc9f6ef, roughness: 0.42, metalness: 0.08 }));
+      const back = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x123f3d, emissive: 0x0b5f61, emissiveIntensity: 0.22 }));
       const mesh = new THREE.Mesh(tileGeometry, [side, side, side, side, front, back]);
       mesh.position.x = (index - 1) * 1.35;
       mesh.position.y = index === 1 ? 0.28 : 0;
@@ -256,7 +324,6 @@
     let sampleStartedAt = performance.now();
     let sampledFrames = 0;
     let restartScheduled = false;
-    let animationRunning = false;
 
     function resize() {
       const width = Math.max(1, root.clientWidth);
@@ -294,8 +361,10 @@
       if (restartScheduled || next === quality) return;
       restartScheduled = true;
       renderer.setAnimationLoop(null);
-      scheduleTimer(() => {
-        if (destroyed) return;
+      animationRunning = false;
+      qualityTimerId = scheduleTimer(() => {
+        qualityTimerId = null;
+        if (destroyed || activeLayer !== layer) return;
         if (next === "canvas") startCanvasFallback();
         else startThreeLayerSafely(THREE, next);
       }, 0);
@@ -345,41 +414,36 @@
     root.replaceChildren(renderer.domElement);
     setRootMode("three", quality);
     resize();
+    resizeListening = true;
     window.addEventListener("resize", resize);
+    contextLossListening = true;
     renderer.domElement.addEventListener("webglcontextlost", onContextLost);
 
-    activeLayer = {
+    layer = {
       pause() {
         if (!animationRunning) return;
         renderer.setAnimationLoop(null);
         animationRunning = false;
       },
       resume() {
-        if (animationRunning || document.hidden || destroyed) return;
+        if (animationRunning || restartScheduled || document.hidden || destroyed) return;
         sampleStartedAt = performance.now();
         sampledFrames = 0;
         animationRunning = true;
         renderer.setAnimationLoop(renderFrame);
       },
       destroy() {
-        renderer.setAnimationLoop(null);
-        animationRunning = false;
-        renderer.domElement.removeEventListener("webglcontextlost", onContextLost);
-        window.removeEventListener("resize", resize);
-        scene.traverse((object) => {
-          object.geometry?.dispose?.();
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          for (const material of materials) {
-            if (!material) continue;
-            for (const value of Object.values(material)) value?.isTexture && value.dispose();
-            material.dispose?.();
-          }
-        });
-        renderer.dispose();
-        renderer.domElement.remove();
+        cancelTimer(qualityTimerId);
+        qualityTimerId = null;
+        cleanup();
       },
     };
-    activeLayer.resume();
+    layer.resume();
+    activeLayer = layer;
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
   }
 
   function startThreeLayerSafely(THREE, quality) {

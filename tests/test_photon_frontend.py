@@ -33,6 +33,7 @@ class PhotonFrontendTests(unittest.TestCase):
             "width": 1280,
             "injectThree": False,
             "failRendererAfter": None,
+            "failMaterialAfter": None,
         }
         config.update(overrides)
         return self.run_node_json(
@@ -44,9 +45,14 @@ class PhotonFrontendTests(unittest.TestCase):
             let nextHandle = 1;
             let canvas2dCalls = 0;
             let rendererConstructs = 0;
+            let materialConstructs = 0;
             let timerError = null;
             const rafCallbacks = new Map();
             const timerCallbacks = new Map();
+            const canvases = [];
+            const geometries = [];
+            const materials = [];
+            const textures = [];
             const renderers = [];
             const pointLights = [];
             const documentListeners = new Map();
@@ -77,7 +83,7 @@ class PhotonFrontendTests(unittest.TestCase):
 
             function makeCanvas() {{
               const listeners = new Map();
-              return {{
+              const canvas = {{
                 width: 0,
                 height: 0,
                 removed: false,
@@ -90,8 +96,14 @@ class PhotonFrontendTests(unittest.TestCase):
                 }},
                 addEventListener(type, callback) {{ addListener(listeners, type, callback); }},
                 removeEventListener(type, callback) {{ removeListener(listeners, type, callback); }},
+                dispatchEvent(event) {{ dispatch(listeners, event.type, event); }},
+                listenerCount() {{
+                  return [...listeners.values()].reduce((total, callbacks) => total + callbacks.size, 0);
+                }},
                 remove() {{ this.removed = true; }},
               }};
+              canvases.push(canvas);
+              return canvas;
             }}
 
             const root = {{
@@ -180,18 +192,29 @@ class PhotonFrontendTests(unittest.TestCase):
               constructor(array, itemSize) {{ this.array = array; this.itemSize = itemSize; }}
             }}
             class BufferGeometry {{
-              constructor() {{ this.attributes = {{}}; }}
+              constructor() {{ this.attributes = {{}}; geometries.push(this); }}
               setAttribute(name, attribute) {{ this.attributes[name] = attribute; }}
               setDrawRange() {{}}
               dispose() {{ this.disposed = true; }}
             }}
             class BoxGeometry extends BufferGeometry {{}}
             class Material {{
-              constructor(properties = {{}}) {{ Object.assign(this, properties); }}
+              constructor(properties = {{}}) {{
+                materialConstructs += 1;
+                if (config.failMaterialAfter !== null && materialConstructs > config.failMaterialAfter) {{
+                  throw new Error('material construction failed');
+                }}
+                Object.assign(this, properties);
+                materials.push(this);
+              }}
               dispose() {{ this.disposed = true; }}
             }}
             class CanvasTexture {{
-              constructor(canvas) {{ this.canvas = canvas; this.isTexture = true; }}
+              constructor(canvas) {{
+                this.canvas = canvas;
+                this.isTexture = true;
+                textures.push(this);
+              }}
               dispose() {{ this.disposed = true; }}
             }}
             class Clock {{ getElapsedTime() {{ return now / 1000; }} }}
@@ -618,6 +641,81 @@ class PhotonFrontendTests(unittest.TestCase):
                 "status": None,
                 "listeners": 0,
                 "rafCount": 0,
+            },
+        )
+
+    def test_partial_three_initialization_disposes_every_owned_resource(self) -> None:
+        payload = self.run_browser_probe(
+            """
+            const renderer = renderers[0];
+            return {
+              mode: root.dataset.photonMode,
+              rendererDisposed: Boolean(renderer?.disposed),
+              rendererCanvasRemoved: Boolean(renderer?.domElement.removed),
+              rendererCanvasListeners: renderer?.domElement.listenerCount() ?? -1,
+              geometryCount: geometries.length,
+              geometriesDisposed: geometries.every((resource) => resource.disposed),
+              materialCount: materials.length,
+              materialsDisposed: materials.every((resource) => resource.disposed),
+              textureCount: textures.length,
+              texturesDisposed: textures.every((resource) => resource.disposed),
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+            failMaterialAfter=3,
+        )
+        self.assertEqual(
+            payload,
+            {
+                "mode": "canvas",
+                "rendererDisposed": True,
+                "rendererCanvasRemoved": True,
+                "rendererCanvasListeners": 0,
+                "geometryCount": 3,
+                "geometriesDisposed": True,
+                "materialCount": 3,
+                "materialsDisposed": True,
+                "textureCount": 1,
+                "texturesDisposed": True,
+            },
+        )
+
+    def test_context_loss_cancels_stale_quality_rebuild(self) -> None:
+        payload = self.run_browser_probe(
+            """
+            runRendererFrames(1, 2500);
+            const queuedBeforeLoss = timerCallbacks.size;
+            let prevented = false;
+            renderers[0].domElement.dispatchEvent({
+              type: 'webglcontextlost',
+              preventDefault() { prevented = true; },
+            });
+            const modeAfterLoss = root.dataset.photonMode;
+            runTimers();
+            return {
+              queuedBeforeLoss,
+              prevented,
+              modeAfterLoss,
+              finalMode: root.dataset.photonMode,
+              finalQuality: root.dataset.photonQuality,
+              rendererConstructs,
+              timerError,
+            };
+            """,
+            webgl2=True,
+            injectThree=True,
+        )
+        self.assertEqual(
+            payload,
+            {
+                "queuedBeforeLoss": 1,
+                "prevented": True,
+                "modeAfterLoss": "canvas",
+                "finalMode": "canvas",
+                "finalQuality": "canvas",
+                "rendererConstructs": 1,
+                "timerError": None,
             },
         )
 
