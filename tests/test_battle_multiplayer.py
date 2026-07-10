@@ -573,6 +573,7 @@ class BattleMultiplayerViewTests(unittest.TestCase):
     def test_action_return_keeps_discarder_view_during_other_human_claim_prompt(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             session = real_session(temp_dir)
+            session._synchronous_room_events = True
             session.register("alice")
             session.register("bob")
             session.sit("alice", 0)
@@ -586,6 +587,9 @@ class BattleMultiplayerViewTests(unittest.TestCase):
             game.de_set = {"bai"}
             game.flower_set = set()
             game.phase = "turn"
+            game.winner = None
+            game.win_type = ""
+            game.settlement = None
             game.pending = None
             game.current_player = 0
             game.wall = ["m9"] * 50
