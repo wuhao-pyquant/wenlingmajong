@@ -120,26 +120,32 @@
 .photon-lobby-page [data-pending="true"] { cursor: wait; }
 
 .photon-auth-page .photon-auth-status,
+.photon-auth-page .photon-inline-message,
 .photon-lobby-page .photon-lobby-message {
-  min-height: 54px;
-  padding: 12px;
   border: 1px solid rgba(104,245,255,.2);
   border-radius: 5px;
   background: rgba(3,15,18,.9);
   color: #dfffff;
 }
 
+.photon-auth-page .photon-auth-status,
+.photon-lobby-page .photon-lobby-message { min-height: 54px; padding: 12px; }
+.photon-auth-page .photon-inline-message { min-height: 18px; padding: 6px 8px; }
 .photon-auth-page .photon-auth-status strong { color: inherit; }
 .photon-auth-page .photon-auth-status.bad,
 .photon-auth-page .photon-auth-status.bad strong,
+.photon-auth-page .photon-inline-message.bad,
 .photon-lobby-page .photon-lobby-message.bad { color: #ffe1de; background: rgba(74,18,20,.9); border-color: rgba(255,119,113,.5); }
 .photon-auth-page .photon-scene-root[data-photon-status="loading"] ~ .photon-auth-shell .photon-auth-status,
+.photon-auth-page .photon-scene-root[data-photon-status="loading"] ~ .photon-auth-shell .photon-inline-message,
 .photon-lobby-page .photon-scene-root[data-photon-status="loading"] ~ .photon-lobby-shell .photon-lobby-message { color: #dfffff; }
 .photon-auth-page .photon-scene-root[data-photon-status="success"] ~ .photon-auth-shell .photon-auth-status,
 .photon-auth-page .photon-scene-root[data-photon-status="success"] ~ .photon-auth-shell .photon-auth-status strong,
+.photon-auth-page .photon-scene-root[data-photon-status="success"] ~ .photon-auth-shell .photon-inline-message,
 .photon-lobby-page .photon-scene-root[data-photon-status="success"] ~ .photon-lobby-shell .photon-lobby-message { color: #dbffe9; background: rgba(11,62,40,.9); border-color: rgba(69,229,140,.48); }
 .photon-auth-page .photon-scene-root[data-photon-status="error"] ~ .photon-auth-shell .photon-auth-status,
 .photon-auth-page .photon-scene-root[data-photon-status="error"] ~ .photon-auth-shell .photon-auth-status strong,
+.photon-auth-page .photon-scene-root[data-photon-status="error"] ~ .photon-auth-shell .photon-inline-message,
 .photon-lobby-page .photon-scene-root[data-photon-status="error"] ~ .photon-lobby-shell .photon-lobby-message { color: #ffe1de; background: rgba(74,18,20,.9); border-color: rgba(255,119,113,.5); }
 
 .photon-auth-page [hidden],

@@ -913,14 +913,33 @@ class PhotonFrontendTests(unittest.TestCase):
         ):
             self.assertIn(expected, css)
 
+    def test_photon_css_keeps_auth_inline_messages_readable_for_every_state(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+
+        for expected in (
+            ".photon-auth-page .photon-inline-message,",
+            ".photon-auth-page .photon-inline-message.bad",
+            "data-photon-status=\"loading\"] ~ .photon-auth-shell .photon-inline-message",
+            "data-photon-status=\"success\"] ~ .photon-auth-shell .photon-inline-message",
+            "data-photon-status=\"error\"] ~ .photon-auth-shell .photon-inline-message",
+            "color: #dfffff",
+            "color: #dbffe9",
+            "color: #ffe1de",
+            "background: rgba(3,15,18,.9)",
+        ):
+            self.assertIn(expected, css)
+
     def test_photon_css_uses_fixed_heading_sizes_without_viewport_font_scaling(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+        viewport_font_size = r"font-size:\s*[^;{}]*vw\b"
 
         self.assertIn(".photon-auth-page .photon-auth-copy h1", css)
         self.assertIn("font-size: 72px", css)
         self.assertIn(".photon-lobby-page .photon-lobby-heading h1", css)
         self.assertIn("font-size: 56px", css)
-        self.assertNotRegex(css, r"font-size:\s*[^;{}]*\\bvw\\b")
+        with self.assertRaises(AssertionError):
+            self.assertNotRegex("font-size: 5vw", viewport_font_size)
+        self.assertNotRegex(css, viewport_font_size)
 
     def test_photon_css_adds_scoped_accessible_responsive_state_polish(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
