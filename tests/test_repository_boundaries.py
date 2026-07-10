@@ -11,6 +11,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RepositoryBoundaryTests(unittest.TestCase):
+    def test_android_runtime_web_assets_include_photon_lobby_dependencies(self) -> None:
+        gradle = (ROOT / "android-host" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+        service = (
+            ROOT
+            / "android-host"
+            / "app"
+            / "src"
+            / "main"
+            / "java"
+            / "cn"
+            / "wenling"
+            / "mahjong"
+            / "host"
+            / "HostService.kt"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"battle_lobby.html"', gradle)
+        self.assertIn('"photon_scene.js"', gradle)
+        self.assertIn('"photon_lobby.css"', gradle)
+        self.assertIn('"vendor/three/**"', gradle)
+        self.assertIn('"battle_lobby.html"', service)
+        self.assertIn('"photon_scene.js"', service)
+        self.assertIn('"photon_lobby.css"', service)
+        self.assertIn('"vendor"', service)
+
     def test_core_manifest_matches_packaged_files(self) -> None:
         core_root = ROOT / "packages" / "wenling_core" / "wenling_core"
         manifest = json.loads(
