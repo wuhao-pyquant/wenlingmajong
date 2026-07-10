@@ -22,23 +22,23 @@
         </div>
         <section class="photon-auth-console" aria-label="账号入口">
           <div class="photon-auth-tabs" role="tablist" aria-label="账号操作">
-            <button type="button" role="tab" data-auth-mode="login" aria-selected="true" aria-controls="loginAuthPanel">登录</button>
-            <button type="button" role="tab" data-auth-mode="register" aria-selected="false" aria-controls="registerAuthPanel">邀请码注册</button>
+            <button id="loginAuthTab" type="button" role="tab" data-auth-mode="login" aria-selected="true" aria-controls="loginAuthPanel" tabindex="0">登录</button>
+            <button id="registerAuthTab" type="button" role="tab" data-auth-mode="register" aria-selected="false" aria-controls="registerAuthPanel" tabindex="-1">邀请码注册</button>
           </div>
           <section class="photon-auth-status" aria-live="polite">
             <strong id="authStatusTitle">未登录</strong>
             <span id="authStatusDetail">请输入账号和密码。</span>
           </section>
-          <section id="loginAuthPanel" class="photon-auth-panel" role="tabpanel">
+          <section id="loginAuthPanel" class="photon-auth-panel" role="tabpanel" aria-labelledby="loginAuthTab">
             <label>用户名<input id="loginAccountInput" class="wide-input" autocomplete="username" /></label>
             <label>密码<input id="loginPasswordInput" class="wide-input" type="password" autocomplete="current-password" /></label>
-            <button id="loginBtn" class="primary photon-primary-action" type="button">连接大厅</button>
+            <button id="loginBtn" class="primary photon-primary-action" type="button" aria-busy="false" data-pending="false">连接大厅</button>
           </section>
-          <section id="registerAuthPanel" class="photon-auth-panel photon-register-panel" role="tabpanel" hidden>
+          <section id="registerAuthPanel" class="photon-auth-panel photon-register-panel" role="tabpanel" hidden aria-labelledby="registerAuthTab">
             <label>用户名<input id="registerAccountInput" class="wide-input" maxlength="12" autocomplete="username" /></label>
             <label>密码<input id="registerPasswordInput" class="wide-input" type="password" autocomplete="new-password" /></label>
             <label>邀请码<input id="inviteCodeInput" class="wide-input invite-code-input" maxlength="6" autocomplete="off" /></label>
-            <button id="registerBtn" class="gold photon-primary-action" type="button">注册并连接</button>
+            <button id="registerBtn" class="gold photon-primary-action" type="button" aria-busy="false" data-pending="false">注册并连接</button>
           </section>
           <p class="photon-password-hint">推荐密码1234</p>
           <div id="lobbyMessage" class="lobby-message photon-inline-message" aria-live="polite"></div>

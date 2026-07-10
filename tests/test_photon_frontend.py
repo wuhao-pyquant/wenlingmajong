@@ -25,6 +25,12 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn('role="tablist"', html)
         self.assertIn('data-auth-mode="login"', html)
         self.assertIn('data-auth-mode="register"', html)
+        self.assertIn('id="loginAuthTab"', html)
+        self.assertIn('id="registerAuthTab"', html)
+        self.assertIn('aria-labelledby="loginAuthTab"', html)
+        self.assertIn('aria-labelledby="registerAuthTab"', html)
+        self.assertIn('tabindex="0"', html)
+        self.assertIn('tabindex="-1"', html)
         self.assertIn('id="loginAuthPanel"', html)
         self.assertIn('id="registerAuthPanel"', html)
         self.assertIn('class="photon-auth-panel photon-register-panel" role="tabpanel" hidden', html)
@@ -51,6 +57,424 @@ class PhotonFrontendTests(unittest.TestCase):
             text=True,
         )
         return json.loads(completed.stdout)
+
+    def run_auth_probe(self, probe: str, *, initial_token: str = "", bridge_kind: str = "missing") -> dict:
+        source = """
+            const fs = require('fs');
+            const vm = require('vm');
+            const initialToken = __INITIAL_TOKEN__;
+            const bridgeKind = __BRIDGE_KIND__;
+            const listeners = new Map();
+            const timers = [];
+            const fetchCalls = [];
+            const pendingFetches = [];
+            const unhandledRejections = [];
+            const localValues = new Map();
+            const sessionValues = new Map();
+            let fetchMode = 'success';
+            let navigationCount = 0;
+
+            process.on('unhandledRejection', (error) => unhandledRejections.push(error.message));
+
+            function createClassList() {
+              const values = new Set();
+              return {
+                toggle(name, force) {
+                  if (force) values.add(name); else values.delete(name);
+                },
+                contains(name) { return values.has(name); },
+              };
+            }
+
+            function createElement(id, dataset = {}) {
+              const elementListeners = new Map();
+              const attributes = new Map();
+              return {
+                id,
+                dataset: {...dataset},
+                attributes,
+                classList: createClassList(),
+                disabled: false,
+                hidden: false,
+                value: '',
+                type: 'text',
+                placeholder: '',
+                tabIndex: -1,
+                focusCount: 0,
+                textContent: '',
+                setAttribute(name, value) {
+                  attributes.set(name, String(value));
+                  if (name === 'tabindex') this.tabIndex = Number(value);
+                },
+                getAttribute(name) { return attributes.get(name) || null; },
+                addEventListener(type, callback) {
+                  if (!elementListeners.has(type)) elementListeners.set(type, []);
+                  elementListeners.get(type).push(callback);
+                },
+                dispatch(type, event = {}) {
+                  event.target = this;
+                  for (const callback of elementListeners.get(type) || []) callback(event);
+                  return event;
+                },
+                focus() { this.focusCount += 1; },
+              };
+            }
+
+            const elements = {
+              loginAccountInput: createElement('loginAccountInput'),
+              loginPasswordInput: createElement('loginPasswordInput'),
+              loginBtn: createElement('loginBtn'),
+              registerAccountInput: createElement('registerAccountInput'),
+              registerPasswordInput: createElement('registerPasswordInput'),
+              inviteCodeInput: createElement('inviteCodeInput'),
+              registerBtn: createElement('registerBtn'),
+              loginAuthPanel: createElement('loginAuthPanel'),
+              registerAuthPanel: createElement('registerAuthPanel'),
+              authStatusTitle: createElement('authStatusTitle'),
+              authStatusDetail: createElement('authStatusDetail'),
+              lobbyMessage: createElement('lobbyMessage'),
+              authStatusCard: createElement('authStatusCard'),
+              loginAuthTab: createElement('loginAuthTab', {authMode: 'login'}),
+              registerAuthTab: createElement('registerAuthTab', {authMode: 'register'}),
+            };
+            elements.registerAuthPanel.hidden = true;
+            const tabs = [elements.loginAuthTab, elements.registerAuthTab];
+
+            const document = {
+              body: {dataset: {}},
+              getElementById(id) { return elements[id] || null; },
+              querySelector(selector) {
+                return selector.includes('photon-auth-status') || selector.includes('auth-status-card')
+                  ? elements.authStatusCard
+                  : null;
+              },
+              querySelectorAll(selector) {
+                return selector === '[data-auth-mode]' ? tabs : [];
+              },
+              addEventListener() {},
+            };
+
+            const location = {
+              search: '',
+              _href: '/battle-login',
+              get href() { return this._href; },
+              set href(value) { this._href = value; navigationCount += 1; },
+            };
+            const window = {
+              location,
+              addEventListener() {},
+              setTimeout(callback, delay) {
+                timers.push({callback, delay});
+                return timers.length;
+              },
+              clearTimeout() {},
+            };
+
+            function createBridge(kind) {
+              if (kind === 'missing') return undefined;
+              const call = (name) => () => {
+                if (kind === 'sync-throw') throw new Error(`${name} exploded`);
+                if (kind === 'async-reject') return Promise.reject(new Error(`${name} rejected`));
+                return undefined;
+              };
+              return {
+                setStatus: call('setStatus'),
+                playAuthSuccess: call('playAuthSuccess'),
+                destroy: call('destroy'),
+              };
+            }
+            window.WenlingPhotonScene = createBridge(bridgeKind);
+
+            function response(payload) {
+              return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => JSON.stringify(payload),
+              };
+            }
+            function fetch(path, options) {
+              fetchCalls.push({path, options});
+              if (fetchMode === 'pending') {
+                return new Promise((resolve, reject) => pendingFetches.push({resolve, reject}));
+              }
+              if (fetchMode === 'reject') return Promise.reject(new Error('network down'));
+              return Promise.resolve(response(path === '/api/auth/me'
+                ? {account: 'alice', role: 'player'}
+                : {account: 'alice', role: 'player', session_token: 'fresh-token'}));
+            }
+
+            const localStorage = {
+              getItem(key) { return localValues.get(key) || null; },
+              setItem(key, value) { localValues.set(key, String(value)); },
+              removeItem(key) { localValues.delete(key); },
+            };
+            const sessionStorage = {
+              getItem(key) { return sessionValues.get(key) || null; },
+              setItem(key, value) { sessionValues.set(key, String(value)); },
+              removeItem(key) { sessionValues.delete(key); },
+            };
+            if (initialToken) localStorage.setItem('wenling.online.token.v1', initialToken);
+
+            const sandbox = {
+              URLSearchParams,
+              console,
+              document,
+              fetch,
+              localStorage,
+              Promise,
+              sessionStorage,
+              window,
+            };
+            sandbox.flush = async () => {
+              for (let index = 0; index < 16; index += 1) await Promise.resolve();
+            };
+            sandbox.fireTimers = (limit) => {
+              const ready = timers.filter((timer) => timer.delay <= limit);
+              for (const timer of ready) timer.callback();
+            };
+            sandbox.rejectPending = (message) => {
+              for (const pending of pendingFetches.splice(0)) pending.reject(new Error(message));
+            };
+            sandbox.resolvePending = () => {
+              for (const pending of pendingFetches.splice(0)) {
+                pending.resolve(response({account: 'alice', role: 'player', session_token: 'fresh-token'}));
+              }
+            };
+            sandbox.testState = {
+              elements,
+              fetchCalls,
+              get navigationCount() { return navigationCount; },
+              get fetchMode() { return fetchMode; },
+              set fetchMode(value) { fetchMode = value; },
+              timers,
+              unhandledRejections,
+              localValues,
+              sessionValues,
+            };
+
+            vm.runInNewContext(fs.readFileSync('./static/battle_lobby.js', 'utf8'), sandbox);
+            (async () => {
+              try {
+                const result = await (async () => {
+                  __PROBE__
+                })();
+                await sandbox.flush();
+                console.log(JSON.stringify({result, error: null}));
+              } catch (error) {
+                console.log(JSON.stringify({result: null, error: error.message}));
+              }
+            })();
+        """
+        source = source.replace("__INITIAL_TOKEN__", json.dumps(initial_token))
+        source = source.replace("__BRIDGE_KIND__", json.dumps(bridge_kind))
+        return self.run_node_json(source.replace("__PROBE__", probe))
+
+    def test_auth_bridge_is_best_effort_and_navigation_is_bounded(self) -> None:
+        bounded = self.run_auth_probe(
+            """
+            window.WenlingPhotonScene = {
+              playAuthSuccess() { return new Promise(() => {}); },
+              destroy() {},
+            };
+            const navigation = sandbox.navigateToLobby();
+            const delay = sandbox.testState.timers[0]?.delay || null;
+            sandbox.fireTimers(699);
+            await sandbox.flush();
+            const beforeCap = window.location.href;
+            sandbox.fireTimers(700);
+            await navigation;
+            return {
+              delay,
+              beforeCap,
+              afterCap: window.location.href,
+              navigationCount: sandbox.testState.navigationCount,
+            };
+            """
+        )
+        sync = self.run_auth_probe(
+            """
+            window.WenlingPhotonScene = {
+              setStatus() { throw new Error('status exploded'); },
+              playAuthSuccess() { throw new Error('transition exploded'); },
+              destroy() { throw new Error('destroy exploded'); },
+            };
+            sandbox.setAuthStatus('登录成功', 'ready');
+            const navigation = sandbox.navigateToLobby();
+            const delay = sandbox.testState.timers[0]?.delay || null;
+            sandbox.fireTimers(700);
+            await navigation;
+            return {
+              delay,
+              href: window.location.href,
+              navigationCount: sandbox.testState.navigationCount,
+              transition: sandbox.testState.sessionValues.get('wenling.photon.auth_to_lobby.v1') || null,
+            };
+            """
+        )
+        async_reject = self.run_auth_probe(
+            """
+            window.WenlingPhotonScene = {
+              setStatus() { return Promise.reject(new Error('status rejected')); },
+              playAuthSuccess() { return Promise.reject(new Error('transition rejected')); },
+              destroy() { return Promise.reject(new Error('destroy rejected')); },
+            };
+            sandbox.setAuthStatus('登录成功', 'ready');
+            await sandbox.navigateToLobby();
+            await sandbox.flush();
+            return {
+              href: window.location.href,
+              navigationCount: sandbox.testState.navigationCount,
+              unhandled: sandbox.testState.unhandledRejections,
+            };
+            """
+        )
+        self.assertEqual(sync, {
+            "result": {
+                "delay": 700,
+                "href": "/battle-lobby",
+                "navigationCount": 1,
+                "transition": "1",
+            },
+            "error": None,
+        })
+        self.assertEqual(bounded, {
+            "result": {
+                "delay": 700,
+                "beforeCap": "/battle-login",
+                "afterCap": "/battle-lobby",
+                "navigationCount": 1,
+            },
+            "error": None,
+        })
+        self.assertEqual(async_reject, {
+            "result": {
+                "href": "/battle-lobby",
+                "navigationCount": 1,
+                "unhandled": [],
+            },
+            "error": None,
+        })
+
+    def test_valid_session_survives_bridge_errors_during_initialization(self) -> None:
+        payload = self.run_auth_probe(
+            """
+            await sandbox.flush();
+            return {
+              href: window.location.href,
+              token: sandbox.testState.localValues.get('wenling.online.token.v1') || null,
+              fetches: sandbox.testState.fetchCalls.map((call) => call.path),
+            };
+            """,
+            initial_token="existing-token",
+            bridge_kind="sync-throw",
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "href": "/battle-lobby",
+                "token": "existing-token",
+                "fetches": ["/api/auth/me"],
+            },
+            "error": None,
+        })
+
+    def test_auth_submission_guard_blocks_duplicate_click_and_enter_then_recovers(self) -> None:
+        payload = self.run_auth_probe(
+            """
+            const loginButton = sandbox.testState.elements.loginBtn;
+            const password = sandbox.testState.elements.loginPasswordInput;
+            sandbox.testState.fetchMode = 'pending';
+            loginButton.dispatch('click');
+            password.dispatch('keydown', {key: 'Enter', preventDefault() { this.prevented = true; }});
+            loginButton.dispatch('click');
+            const pending = {
+              fetches: sandbox.testState.fetchCalls.length,
+              disabled: loginButton.disabled,
+              pending: loginButton.dataset.pending,
+              busy: loginButton.getAttribute('aria-busy'),
+            };
+            sandbox.rejectPending('network down');
+            await sandbox.flush();
+            return {
+              pending,
+              recovered: {
+                disabled: loginButton.disabled,
+                pending: loginButton.dataset.pending,
+                busy: loginButton.getAttribute('aria-busy'),
+              },
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "pending": {"fetches": 1, "disabled": True, "pending": "true", "busy": "true"},
+                "recovered": {"disabled": False, "pending": "false", "busy": "false"},
+            },
+            "error": None,
+        })
+
+    def test_register_submission_guard_navigates_once_for_click_and_enter(self) -> None:
+        payload = self.run_auth_probe(
+            """
+            const registerButton = sandbox.testState.elements.registerBtn;
+            const invite = sandbox.testState.elements.inviteCodeInput;
+            sandbox.testState.fetchMode = 'pending';
+            registerButton.dispatch('click');
+            invite.dispatch('keydown', {key: 'Enter', preventDefault() { this.prevented = true; }});
+            registerButton.dispatch('click');
+            const pending = {
+              fetches: sandbox.testState.fetchCalls.length,
+              disabled: registerButton.disabled,
+              pending: registerButton.dataset.pending,
+            };
+            sandbox.resolvePending();
+            await sandbox.flush();
+            return {
+              pending,
+              href: window.location.href,
+              navigationCount: sandbox.testState.navigationCount,
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "pending": {"fetches": 1, "disabled": True, "pending": "true"},
+                "href": "/battle-lobby",
+                "navigationCount": 1,
+            },
+            "error": None,
+        })
+
+    def test_auth_tabs_use_roving_tabindex_and_keyboard_focus(self) -> None:
+        payload = self.run_auth_probe(
+            """
+            const login = sandbox.testState.elements.loginAuthTab;
+            const register = sandbox.testState.elements.registerAuthTab;
+            const loginPanel = sandbox.testState.elements.loginAuthPanel;
+            const registerPanel = sandbox.testState.elements.registerAuthPanel;
+            const events = [];
+            for (const [tab, key] of [[login, 'ArrowRight'], [register, 'Home'], [login, 'End'], [register, 'ArrowLeft']]) {
+              tab.dispatch('keydown', {key, preventDefault() { events.push(key); }});
+            }
+            return {
+              selected: [login.getAttribute('aria-selected'), register.getAttribute('aria-selected')],
+              tabIndex: [login.tabIndex, register.tabIndex],
+              hidden: [loginPanel.hidden, registerPanel.hidden],
+              focus: [login.focusCount, register.focusCount],
+              prevented: events,
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "selected": ["true", "false"],
+                "tabIndex": [0, -1],
+                "hidden": [False, True],
+                "focus": [2, 2],
+                "prevented": ["ArrowRight", "Home", "End", "ArrowLeft"],
+            },
+            "error": None,
+        })
 
     def run_browser_probe(self, probe: str, **overrides: object) -> dict:
         config = {

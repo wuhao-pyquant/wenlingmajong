@@ -63,5 +63,6 @@
 .photon-auth-page .photon-auth-panel label { display: grid; gap: 5px; color: #9eb1b2; font-size: 12px; font-weight: 800; }
 .photon-auth-page .photon-auth-panel input { min-width: 0; height: 42px; border: 1px solid rgba(104,245,255,.18); border-radius: 5px; background: rgba(255,255,255,.035); color: #eaffff; }
 .photon-auth-page .photon-primary-action { align-self: end; min-width: 112px; min-height: 42px; border-color: #68f5ff; background: #68f5ff; color: #061012; font-weight: 900; box-shadow: 0 0 20px rgba(104,245,255,.25); }
+.photon-auth-page .photon-primary-action[data-pending="true"] { cursor: wait; opacity: .72; }
 .photon-auth-page .photon-password-hint { margin: 9px 0 0; color: #819798; font-size: 11px; }
 .photon-auth-page .photon-inline-message { min-height: 18px; margin-top: 4px; }

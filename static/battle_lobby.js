@@ -12,6 +12,8 @@ let roomRefreshTimer = null;
 let loadingRooms = false;
 let lastRooms = [];
 let lastMaxRooms = 3;
+let authSubmissionPending = false;
+let authNavigationStarted = false;
 
 function applyAuthDefaults() {
   const invite = $("inviteCodeInput");
@@ -25,16 +27,34 @@ function applyAuthDefaults() {
   });
 }
 
-function setAuthMode(mode) {
-  const registerMode = mode === "register";
+function setAuthMode(mode, { focus = false } = {}) {
+  const selectedMode = mode === "register" ? "register" : "login";
+  const registerMode = selectedMode === "register";
   const loginPanel = $("loginAuthPanel");
   const registerPanel = $("registerAuthPanel");
   if (loginPanel) loginPanel.hidden = registerMode;
   if (registerPanel) registerPanel.hidden = !registerMode;
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
-    button.setAttribute("aria-selected", String(button.dataset.authMode === mode));
+    const selected = button.dataset.authMode === selectedMode;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    if (focus && selected) button.focus();
   });
-  document.body.dataset.authMode = registerMode ? "register" : "login";
+  document.body.dataset.authMode = selectedMode;
+}
+
+function handleAuthTabKeydown(event, button) {
+  const tabs = Array.from(document.querySelectorAll("[data-auth-mode]"));
+  const currentIndex = tabs.indexOf(button);
+  if (currentIndex < 0) return;
+  let nextIndex = null;
+  if (event.key === "ArrowLeft") nextIndex = (currentIndex + tabs.length - 1) % tabs.length;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = tabs.length - 1;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  setAuthMode(tabs[nextIndex].dataset.authMode || "login", { focus: true });
 }
 
 function wait(ms) {
@@ -42,17 +62,47 @@ function wait(ms) {
 }
 
 async function navigateToLobby({ animate = true } = {}) {
+  if (authNavigationStarted) return;
+  authNavigationStarted = true;
   try {
     sessionStorage.setItem(PHOTON_TRANSITION_KEY, "1");
   } catch {
     // sessionStorage can be unavailable in hardened browser profiles.
   }
   if (animate) {
-    const transition = window.WenlingPhotonScene?.playAuthSuccess?.();
-    await Promise.race([Promise.resolve(transition).catch(() => undefined), wait(700)]);
+    await Promise.race([photonBridgeCall("playAuthSuccess"), wait(700)]);
   }
-  window.WenlingPhotonScene?.destroy?.();
+  void photonBridgeCall("destroy");
   window.location.href = "/battle-lobby";
+}
+
+function photonBridgeCall(method, ...args) {
+  try {
+    return Promise.resolve(window.WenlingPhotonScene?.[method]?.(...args)).catch(() => undefined);
+  } catch {
+    return Promise.resolve(undefined);
+  }
+}
+
+function setAuthPending(button, pending) {
+  if (!button) return;
+  button.disabled = pending;
+  button.dataset.pending = String(pending);
+  button.setAttribute("aria-busy", String(pending));
+  button.classList.toggle("pending", pending);
+}
+
+function beginAuthSubmission(button) {
+  if (authSubmissionPending || authNavigationStarted) return false;
+  authSubmissionPending = true;
+  setAuthPending(button, true);
+  return true;
+}
+
+function finishAuthSubmission(button) {
+  if (authNavigationStarted) return;
+  authSubmissionPending = false;
+  setAuthPending(button, false);
 }
 
 function tokenValue() {
@@ -170,7 +220,7 @@ function setAuthStatus(title, detail, bad = false) {
   if (statusDetail) statusDetail.textContent = detail;
   const statusCard = document.querySelector(".auth-status-card, .photon-auth-status");
   if (statusCard) statusCard.classList.toggle("bad", Boolean(bad));
-  window.WenlingPhotonScene?.setStatus?.(bad ? "error" : title.includes("成功") ? "success" : "loading");
+  void photonBridgeCall("setStatus", bad ? "error" : title.includes("成功") ? "success" : "loading");
 }
 
 function readNoticeFromUrl() {
@@ -193,6 +243,8 @@ function updateSessionUi() {
 }
 
 async function login() {
+  const button = $("loginBtn");
+  if (!beginAuthSubmission(button)) return;
   try {
     setAuthStatus("正在登录", "正在验证账号密码。");
     const payload = await post("/api/auth/login", {
@@ -205,10 +257,14 @@ async function login() {
   } catch (error) {
     setAuthStatus("登录失败", error.message, true);
     setMessage(error.message, true);
+  } finally {
+    finishAuthSubmission(button);
   }
 }
 
 async function register() {
+  const button = $("registerBtn");
+  if (!beginAuthSubmission(button)) return;
   try {
     setAuthStatus("正在注册", "正在验证邀请码并创建账号。");
     const payload = await post("/api/auth/register", {
@@ -222,6 +278,8 @@ async function register() {
   } catch (error) {
     setAuthStatus("注册失败", error.message, true);
     setMessage(error.message, true);
+  } finally {
+    finishAuthSubmission(button);
   }
 }
 
@@ -451,20 +509,27 @@ async function logout() {
 function bindAuthEvents() {
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => setAuthMode(button.dataset.authMode || "login"));
+    button.addEventListener("keydown", (event) => handleAuthTabKeydown(event, button));
   });
   if ($("loginBtn")) $("loginBtn").addEventListener("click", login);
   if ($("registerBtn")) $("registerBtn").addEventListener("click", register);
   ["loginAccountInput", "loginPasswordInput"].forEach((id) => {
     if ($(id)) {
       $(id).addEventListener("keydown", (event) => {
-        if (event.key === "Enter") login();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          login();
+        }
       });
     }
   });
   ["registerAccountInput", "registerPasswordInput", "inviteCodeInput"].forEach((id) => {
     if ($(id)) {
       $(id).addEventListener("keydown", (event) => {
-        if (event.key === "Enter") register();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          register();
+        }
       });
     }
   });
