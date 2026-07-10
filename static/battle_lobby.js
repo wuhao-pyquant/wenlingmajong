@@ -9,11 +9,11 @@ const $ = (id) => document.getElementById(id);
 const isAuthPage = Boolean($("loginBtn") || $("registerBtn"));
 const isLobbyPage = Boolean($("roomTableGrid"));
 let roomRefreshTimer = null;
-let loadingRooms = false;
+let roomLoadPromise = null;
 let lastRooms = [];
 let lastMaxRooms = 3;
 const pendingReadyRooms = new Set();
-const pendingPrimarySlots = new Set();
+const pendingPrimaryActions = new Set();
 let roomNavigationStarted = false;
 let authSubmissionPending = false;
 let authNavigationStarted = false;
@@ -357,26 +357,35 @@ function roomForSlot(index) {
   return lastRooms[index] || null;
 }
 
-async function loadRooms() {
+function loadRooms() {
   updateSessionUi();
   if (!tokenValue()) {
     window.location.href = "/battle-login?notice=" + encodeURIComponent("请先登录账号。");
-    return;
+    return Promise.resolve();
   }
-  if (loadingRooms) return;
-  loadingRooms = true;
-  try {
-    const payload = await api("/api/lobby/rooms");
-    renderTableSlots(payload.rooms || [], payload.max_rooms || 3);
-  } catch (error) {
-    setMessage(error.message, true);
-    if (String(error.message || "").toLowerCase().includes("login")) {
-      window.location.href = "/battle-login?notice=" + encodeURIComponent("登录已失效，请重新登录。");
+  if (roomLoadPromise) return roomLoadPromise;
+  const request = (async () => {
+    try {
+      const payload = await api("/api/lobby/rooms");
+      renderTableSlots(payload.rooms || [], payload.max_rooms || 3);
+    } catch (error) {
+      setMessage(error.message, true);
+      if (String(error.message || "").toLowerCase().includes("login")) {
+        window.location.href = "/battle-login?notice=" + encodeURIComponent("登录已失效，请重新登录。");
+      }
+    } finally {
+      if (roomLoadPromise === request) roomLoadPromise = null;
+      updateSessionUi();
     }
-  } finally {
-    loadingRooms = false;
-    updateSessionUi();
-  }
+  })();
+  roomLoadPromise = request;
+  return request;
+}
+
+async function loadRoomsAfterMutation() {
+  const previousLoad = roomLoadPromise;
+  if (previousLoad) await previousLoad.catch(() => undefined);
+  await loadRooms();
 }
 
 function renderSeatDots(room) {
@@ -412,6 +421,11 @@ function normalizedMaxRooms(value) {
   return Math.min(3, Math.floor(parsed));
 }
 
+function primaryActionKey(room, slotIndex) {
+  const roomId = String(room?.room_id || "");
+  return roomId ? `room:${roomId}` : `create:${slotIndex}`;
+}
+
 function renderTableSlots(rooms, maxRooms) {
   const previousRooms = lastRooms;
   const nextRooms = Array.isArray(rooms) ? rooms.slice(0, 3) : [];
@@ -427,7 +441,7 @@ function renderTableSlots(rooms, maxRooms) {
     const mine = Boolean(accountSeat(room));
     const emptySeat = room ? firstEmptySeat(room) : null;
     const capacityUnavailable = !room && index >= lastMaxRooms;
-    const primaryPending = pendingPrimarySlots.has(index);
+    const primaryPending = pendingPrimaryActions.has(primaryActionKey(room, index));
     const readyPending = Boolean(room && pendingReadyRooms.has(String(room.room_id)));
     const disabled = capacityUnavailable || primaryPending
       || Boolean(room && status === "playing" && !mine)
@@ -469,12 +483,13 @@ async function createOrJoinTable(slotIndex) {
     return;
   }
   const room = roomForSlot(slotIndex);
-  if (roomNavigationStarted || pendingPrimarySlots.has(slotIndex)) return;
+  const actionKey = primaryActionKey(room, slotIndex);
+  if (roomNavigationStarted || pendingPrimaryActions.has(actionKey)) return;
   if (!room && slotIndex >= lastMaxRooms) {
     setMessage("该桌位超出当前房间容量。", true);
     return;
   }
-  pendingPrimarySlots.add(slotIndex);
+  pendingPrimaryActions.add(actionKey);
   renderTableSlots(lastRooms, lastMaxRooms);
   try {
     if (!room) {
@@ -486,6 +501,7 @@ async function createOrJoinTable(slotIndex) {
         room_name: `${slotIndex + 1}号桌`,
         ai_policy: $("roomAiPolicySelect")?.value || "low",
       });
+      await loadRoomsAfterMutation();
       enterRoom(created.room_id, created);
       return;
     }
@@ -507,13 +523,14 @@ async function createOrJoinTable(slotIndex) {
       seat: targetSeat.absolute_seat ?? targetSeat.seat ?? 0,
       room_generation: room.room_generation,
     });
+    await loadRoomsAfterMutation();
     enterRoom(room.room_id, { ...room, ...seated, room_id: room.room_id });
   } catch (error) {
     setMessage(error.message, true);
     await loadRooms();
   } finally {
     if (!roomNavigationStarted) {
-      pendingPrimarySlots.delete(slotIndex);
+      pendingPrimaryActions.delete(actionKey);
       renderTableSlots(lastRooms, lastMaxRooms);
     }
   }
@@ -530,7 +547,7 @@ async function toggleReady(roomId) {
     await post(`/api/battle/${encodeURIComponent(roomId)}/ready`, {
       room_generation: room.room_generation,
     });
-    await loadRooms();
+    await loadRoomsAfterMutation();
   } catch (error) {
     setMessage(error.message, true);
   } finally {
@@ -542,10 +559,15 @@ async function toggleReady(roomId) {
 function enterRoom(roomId, room = null) {
   if (!roomId || roomNavigationStarted) return;
   roomNavigationStarted = true;
-  saveRoomId(roomId);
-  if (room) saveRoomSummary(room);
-  void photonBridgeCall("destroy");
-  window.location.href = `/battle?room_id=${encodeURIComponent(roomId)}`;
+  try {
+    saveRoomId(roomId);
+    if (room) saveRoomSummary(room);
+    void photonBridgeCall("destroy");
+    window.location.href = `/battle?room_id=${encodeURIComponent(roomId)}`;
+  } catch (error) {
+    roomNavigationStarted = false;
+    throw error;
+  }
 }
 
 async function logout() {

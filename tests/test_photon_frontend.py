@@ -314,6 +314,7 @@ class PhotonFrontendTests(unittest.TestCase):
             const sessionValues = new Map();
             let fetchMode = 'success';
             let navigationCount = 0;
+            let navigationThrowsRemaining = 0;
             let roomPayload = {
               rooms: [{
                 room_id: 'room-1', room_name: '1号桌', owner_account: 'alice',
@@ -395,7 +396,14 @@ class PhotonFrontendTests(unittest.TestCase):
               search: '',
               _href: '/battle-lobby',
               get href() { return this._href; },
-              set href(value) { this._href = value; navigationCount += 1; },
+              set href(value) {
+                if (navigationThrowsRemaining > 0) {
+                  navigationThrowsRemaining -= 1;
+                  throw new Error('navigation blocked');
+                }
+                this._href = value;
+                navigationCount += 1;
+              },
             };
             const window = {
               location,
@@ -478,6 +486,15 @@ class PhotonFrontendTests(unittest.TestCase):
               get navigationCount() { return navigationCount; },
               get fetchMode() { return fetchMode; },
               set fetchMode(value) { fetchMode = value; },
+              failNextNavigation() { navigationThrowsRemaining += 1; },
+              pendingPaths() { return pendingFetches.map((pending) => pending.path); },
+              resolvePendingPath(path, payload) {
+                const index = pendingFetches.findIndex((pending) => pending.path === path);
+                if (index < 0) return false;
+                const [pending] = pendingFetches.splice(index, 1);
+                pending.resolve(response(payload));
+                return true;
+              },
               rejectPending(message) {
                 for (const pending of pendingFetches.splice(0)) pending.reject(new Error(message));
               },
@@ -597,6 +614,8 @@ class PhotonFrontendTests(unittest.TestCase):
             const second = sandbox.createOrJoinTable(0);
             await sandbox.flush();
             state.resolvePending({room_id: 'created-room'});
+            await sandbox.flush();
+            state.resolvePendingPath('/api/lobby/rooms', {rooms: [], max_rooms: 3});
             await Promise.all([first, second]);
             return {
               operationPosts: state.fetchCalls.filter((call) => call.method === 'POST').length,
@@ -615,6 +634,182 @@ class PhotonFrontendTests(unittest.TestCase):
         })
         self.assertEqual(succeeded, {
             "result": {"operationPosts": 1, "navigationCount": 1},
+            "error": None,
+        })
+
+    def test_lobby_mutation_waits_for_old_poll_then_guaranteed_fresh_load(self) -> None:
+        payload = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            const stale = state.roomPayload;
+            const fresh = {
+              rooms: [{...stale.rooms[0], ready_accounts: ['alice']}],
+              max_rooms: 3,
+            };
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const oldPoll = sandbox.loadRooms();
+            const mutation = sandbox.toggleReady('room-1');
+            let mutationSettled = false;
+            mutation.then(() => { mutationSettled = true; });
+            await sandbox.flush();
+            state.resolvePendingPath('/api/battle/room-1/ready', {});
+            await sandbox.flush();
+            const afterMutation = {
+              settled: mutationSettled,
+              pending: state.buttonState(0, 'table-ready-btn').pending,
+              getCount: state.fetchCalls.filter((call) => call.path === '/api/lobby/rooms').length,
+            };
+            state.resolvePendingPath('/api/lobby/rooms', stale);
+            await oldPoll;
+            await sandbox.flush();
+            const afterOldPoll = {
+              settled: mutationSettled,
+              pending: state.buttonState(0, 'table-ready-btn').pending,
+              getCount: state.fetchCalls.filter((call) => call.path === '/api/lobby/rooms').length,
+              pendingPaths: state.pendingPaths(),
+            };
+            state.resolvePendingPath('/api/lobby/rooms', fresh);
+            await mutation;
+            await sandbox.flush();
+            return {
+              afterMutation,
+              afterOldPoll,
+              finalPending: state.buttonState(0, 'table-ready-btn').pending,
+              finalReady: state.slots[0].innerHTML.includes('取消准备'),
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "afterMutation": {"settled": False, "pending": True, "getCount": 1},
+                "afterOldPoll": {
+                    "settled": False,
+                    "pending": True,
+                    "getCount": 2,
+                    "pendingPaths": ["/api/lobby/rooms"],
+                },
+                "finalPending": False,
+                "finalReady": True,
+            },
+            "error": None,
+        })
+
+    def test_lobby_primary_identity_follows_room_and_not_compacted_slot(self) -> None:
+        joined = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            const roomA = {
+              room_id: 'room-a', room_name: 'A桌', owner_account: 'owner-a', ai_policy: 'low',
+              status: 'open', room_generation: 1,
+              seats: [{account: 'owner-a'}, {account: '', absolute_seat: 1}, {account: ''}, {account: ''}],
+              ready_accounts: [],
+            };
+            const roomB = {
+              room_id: 'room-b', room_name: 'B桌', owner_account: 'owner-b', ai_policy: 'low',
+              status: 'open', room_generation: 2,
+              seats: [{account: 'owner-b'}, {account: '', absolute_seat: 1}, {account: ''}, {account: ''}],
+              ready_accounts: [],
+            };
+            state.setRoomPayload({rooms: [roomA, roomB], max_rooms: 3});
+            sandbox.renderTableSlots([roomA, roomB], 3);
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const joinA = sandbox.createOrJoinTable(0);
+            await sandbox.flush();
+            sandbox.renderTableSlots([roomB, roomA], 3);
+            const afterReorder = [0, 1].map((index) => state.buttonState(index, 'room-primary-action').pending);
+            const blockedA = sandbox.createOrJoinTable(1);
+            const joinB = sandbox.createOrJoinTable(0);
+            await sandbox.flush();
+            const sitPaths = state.fetchCalls.filter((call) => call.path.endsWith('/sit')).map((call) => call.path);
+            state.fetchMode = 'success';
+            state.rejectPending('stop joins');
+            await Promise.all([joinA, blockedA, joinB]);
+            return {afterReorder, sitPaths};
+            """
+        )
+        created = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            const roomA = {
+              room_id: 'room-a', room_name: 'A桌', owner_account: 'owner-a', ai_policy: 'low',
+              status: 'open', room_generation: 1,
+              seats: [{account: 'owner-a'}, {account: '', absolute_seat: 1}, {account: ''}, {account: ''}],
+              ready_accounts: [],
+            };
+            const roomB = {...roomA, room_id: 'room-b', room_name: 'B桌', owner_account: 'owner-b'};
+            const roomC = {...roomA, room_id: 'room-c', room_name: 'C桌', owner_account: 'owner-c'};
+            state.setRoomPayload({rooms: [roomA, roomB], max_rooms: 3});
+            sandbox.renderTableSlots([roomA, roomB], 3);
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const createThird = sandbox.createOrJoinTable(2);
+            await sandbox.flush();
+            sandbox.renderTableSlots([roomA, roomB, roomC], 3);
+            const compactedPending = state.buttonState(2, 'room-primary-action').pending;
+            const joinC = sandbox.createOrJoinTable(2);
+            await sandbox.flush();
+            const operationPaths = state.fetchCalls.filter((call) => call.method === 'POST').map((call) => call.path);
+            state.fetchMode = 'success';
+            state.rejectPending('stop actions');
+            await Promise.all([createThird, joinC]);
+            return {compactedPending, operationPaths};
+            """
+        )
+        self.assertEqual(joined, {
+            "result": {
+                "afterReorder": [False, True],
+                "sitPaths": ["/api/battle/room-a/sit", "/api/battle/room-b/sit"],
+            },
+            "error": None,
+        })
+        self.assertEqual(created, {
+            "result": {
+                "compactedPending": False,
+                "operationPaths": ["/api/lobby/rooms", "/api/battle/room-c/sit"],
+            },
+            "error": None,
+        })
+
+    def test_lobby_navigation_failure_rolls_back_and_allows_retry(self) -> None:
+        payload = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            state.setRoomPayload({rooms: [], max_rooms: 3});
+            sandbox.renderTableSlots([], 3);
+            state.fetchCalls.length = 0;
+            state.failNextNavigation();
+            await sandbox.createOrJoinTable(0);
+            const afterFailure = {
+              pending: state.buttonState(0, 'room-primary-action').pending,
+              disabled: state.buttonState(0, 'room-primary-action').disabled,
+              message: state.elements.lobbyMessage.textContent,
+              postCount: state.fetchCalls.filter((call) => call.method === 'POST').length,
+              navigationCount: state.navigationCount,
+            };
+            await sandbox.createOrJoinTable(0);
+            return {
+              afterFailure,
+              finalPostCount: state.fetchCalls.filter((call) => call.method === 'POST').length,
+              finalNavigationCount: state.navigationCount,
+              href: window.location.href,
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "afterFailure": {
+                    "pending": False,
+                    "disabled": False,
+                    "message": "navigation blocked",
+                    "postCount": 1,
+                    "navigationCount": 0,
+                },
+                "finalPostCount": 2,
+                "finalNavigationCount": 1,
+                "href": "/battle?room_id=created-room",
+            },
             "error": None,
         })
 
