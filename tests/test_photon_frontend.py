@@ -853,6 +853,30 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn(".photon-lobby-page .room-table-icon", phone)
         self.assertIn("max-width: 360px", phone)
 
+    def test_photon_css_adds_scoped_accessible_responsive_state_polish(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+
+        for expected in (
+            "@media (max-width: 760px), (pointer: coarse)",
+            "@media (max-height: 520px) and (orientation: landscape)",
+            ".photon-auth-page :is(button, input):focus-visible",
+            ".photon-lobby-page :is(button, a):focus-visible",
+            "outline: 3px solid #fff",
+            ".photon-auth-page .photon-scene-root[data-photon-transition=\"auth-success\"]",
+            ".photon-lobby-page .photon-scene-root[data-photon-transition=\"lobby-reveal\"]",
+            ".photon-auth-page .photon-scene-root[data-photon-status=\"loading\"]",
+            ".photon-auth-page .photon-scene-root[data-photon-status=\"error\"]",
+            ".photon-lobby-page .photon-scene-root[data-photon-status=\"success\"]",
+            "grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr)",
+            "overflow-y: auto",
+            "box-sizing: border-box",
+        ):
+            self.assertIn(expected, css)
+
+        self.assertNotIn("\n.photon-scene-root {", css)
+        self.assertNotIn("\n.photon-scene-root canvas {", css)
+        self.assertNotIn("letter-spacing: -", css)
+
     def test_auth_bridge_is_best_effort_and_navigation_is_bounded(self) -> None:
         bounded = self.run_auth_probe(
             """

@@ -7,7 +7,8 @@
   color: #eaffff;
 }
 
-.photon-scene-root {
+.photon-auth-page .photon-scene-root,
+.photon-lobby-page .photon-scene-root {
   position: fixed;
   z-index: 0;
   inset: 0;
@@ -16,7 +17,8 @@
   pointer-events: none;
 }
 
-.photon-scene-root canvas {
+.photon-auth-page .photon-scene-root canvas,
+.photon-lobby-page .photon-scene-root canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -27,6 +29,11 @@
 .photon-lobby-page > :not(.photon-scene-root) {
   position: relative;
   z-index: 1;
+}
+
+.photon-auth-page *,
+.photon-lobby-page * {
+  box-sizing: border-box;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -112,7 +119,17 @@
 .photon-lobby-page .room-table-unavailable { opacity: .68; }
 .photon-lobby-page [data-pending="true"] { cursor: wait; }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) {
+  .photon-auth-page .photon-auth-shell { min-height: 100svh; padding: 16px 14px max(14px, env(safe-area-inset-bottom)); }
+  .photon-auth-page .photon-topbar { align-items: flex-start; }
+  .photon-auth-page .photon-auth-stage { grid-template-columns: minmax(0, 1fr); align-content: space-between; gap: 18px; padding-top: 22px; }
+  .photon-auth-page .photon-auth-copy h1 { font-size: 42px; }
+  .photon-auth-page .photon-auth-copy p { font-size: 14px; }
+  .photon-auth-page .photon-auth-console { align-self: end; width: 100%; min-width: 0; margin: 0; }
+  .photon-auth-page .photon-auth-panel,
+  .photon-auth-page .photon-register-panel { grid-template-columns: minmax(0, 1fr); max-height: min(48svh, 420px); overflow-y: auto; }
+  .photon-auth-page .photon-auth-panel input { width: 100%; }
+  .photon-auth-page .photon-primary-action { width: 100%; min-width: 0; }
   .photon-lobby-page .photon-lobby-shell { width: min(100%, calc(100vw - 24px)); min-width: 0; padding: 14px 0 28px; }
   .photon-lobby-page .photon-lobby-topbar { align-items: flex-start; flex-wrap: wrap; }
   .photon-lobby-page .photon-account-cluster { min-width: 0; flex: 1 1 220px; flex-wrap: wrap; justify-content: flex-end; }
@@ -124,4 +141,46 @@
   .photon-lobby-page .room-table-meta { min-width: 0; flex-wrap: wrap; }
   .photon-lobby-page .room-table-actions { min-width: 0; grid-template-columns: minmax(0, 1fr) auto; }
   .photon-lobby-page .room-primary-action, .photon-lobby-page .table-ready-btn { min-width: 0; min-height: 44px; }
+}
+
+.photon-auth-page :is(button, input):focus-visible,
+.photon-lobby-page :is(button, a):focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.photon-auth-page .photon-scene-root[data-photon-transition="auth-success"] { filter: brightness(1.24); }
+.photon-lobby-page .photon-scene-root[data-photon-transition="lobby-reveal"] { filter: brightness(1.12); }
+.photon-auth-page .photon-scene-root[data-photon-status="loading"] { box-shadow: inset 0 0 90px rgba(104,245,255,.1); }
+.photon-auth-page .photon-scene-root[data-photon-status="error"],
+.photon-lobby-page .photon-scene-root[data-photon-status="error"] { box-shadow: inset 0 0 90px rgba(238,78,72,.12); }
+.photon-auth-page .photon-scene-root[data-photon-status="success"],
+.photon-lobby-page .photon-scene-root[data-photon-status="success"] { box-shadow: inset 0 0 90px rgba(69,229,140,.1); }
+
+.photon-auth-page .photon-auth-console,
+.photon-lobby-page .room-table-slot,
+.photon-auth-page .photon-scene-root,
+.photon-lobby-page .photon-scene-root {
+  transition: border-color 180ms ease, box-shadow 180ms ease, filter 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.photon-lobby-page .room-table-slot:hover {
+  transform: translateY(-3px);
+  border-color: rgba(104,245,255,.42);
+}
+
+.photon-lobby-page .room-table-slot.room-table-pending { border-color: rgba(104,245,255,.52); }
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .photon-auth-page .photon-auth-shell { padding-top: 10px; padding-bottom: 10px; }
+  .photon-auth-page .photon-topbar { min-height: 36px; }
+  .photon-auth-page .photon-auth-stage { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: end; gap: 14px; padding-top: 8px; }
+  .photon-auth-page .photon-auth-copy h1 { font-size: 32px; }
+  .photon-auth-page .photon-auth-copy p { display: none; }
+  .photon-auth-page .photon-auth-console { max-height: calc(100svh - 62px); min-width: 0; overflow-y: auto; }
+  .photon-auth-page .photon-auth-panel,
+  .photon-auth-page .photon-register-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
+  .photon-lobby-page .photon-lobby-heading { padding-top: 18px; }
+  .photon-lobby-page .photon-room-grid { grid-template-columns: repeat(3, minmax(220px, 1fr)); min-width: 0; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .photon-lobby-page .room-table-slot { min-height: 340px; scroll-snap-align: start; }
 }
