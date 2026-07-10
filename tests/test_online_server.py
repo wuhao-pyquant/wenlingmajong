@@ -109,6 +109,26 @@ class OnlineServerTests(unittest.TestCase):
                 html = response.read().decode("utf-8")
             self.assertIn(expected, html)
 
+    def test_photon_assets_serve_locally_and_battle_page_is_isolated(self) -> None:
+        login_html = self.open_path("/battle-login").decode("utf-8")
+        lobby_html = self.open_path("/battle-lobby").decode("utf-8")
+        battle_html = self.open_path("/battle").decode("utf-8")
+        self.assertIn("photon_scene.js", login_html)
+        self.assertIn("photon_scene.js", lobby_html)
+        self.assertNotIn("photon_scene.js", battle_html)
+        self.assertNotIn("vendor/three", battle_html)
+
+        for path in (
+            "/photon_scene.js",
+            "/photon_lobby.css",
+            "/vendor/three/three.module.min.js",
+            "/vendor/three/LICENSE",
+        ):
+            request = urllib.request.Request(self.base + path)
+            with urllib.request.urlopen(request, timeout=5) as response:
+                self.assertGreater(int(response.headers["Content-Length"]), 100)
+                self.assertEqual(response.status, 200)
+
     def test_online_lobby_page_is_public_from_remote_clients(self) -> None:
         html = self.open_path(
             "/battle-lobby",

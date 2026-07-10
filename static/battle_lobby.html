@@ -5,43 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>温岭麻将 选桌</title>
     <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
+    <link rel="stylesheet" href="/photon_lobby.css?v=20260710-photon-1" />
   </head>
-  <body class="standalone-page room-lobby-page">
-    <main class="standalone-shell online-lobby-shell">
-      <header class="standalone-head">
-        <div>
-          <h1>选桌入座</h1>
-          <p>点击空桌创建房间；点击已有房间自动落座并进入对战。</p>
-        </div>
-        <div class="standalone-links">
+  <body class="standalone-page room-lobby-page photon-lobby-page">
+    <div id="photonSceneRoot" class="photon-scene-root" data-page="lobby" aria-hidden="true"></div>
+    <main class="photon-lobby-shell">
+      <header class="photon-lobby-topbar">
+        <a class="photon-brand" href="/battle-lobby" aria-label="温岭麻将选桌大厅"><span>W</span><b>温岭麻将</b></a>
+        <div class="photon-account-cluster">
+          <span class="photon-online-dot" aria-hidden="true"></span>
+          <strong id="currentAccountLabel">未登录</strong>
+          <span id="currentRoleLabel" class="tag"></span>
           <a id="adminEntry" href="/battle-admin" hidden>管理后台</a>
           <button id="logoutBtn" type="button">退出登录</button>
         </div>
       </header>
-
-      <section class="standalone-card lobby-card lobby-session-card">
-        <div class="lobby-toolbar">
-          <div>
-            <strong id="currentAccountLabel">未登录</strong>
-            <span id="currentRoleLabel" class="tag"></span>
+      <section class="photon-lobby-heading">
+        <div><span>ROOM NETWORK / 3</span><h1>选择牌桌</h1><p>实时房间网络</p></div>
+        <div class="photon-ai-control" aria-label="新房间 AI 等级">
+          <span>新房间 AI</span>
+          <div role="group" aria-label="AI 等级">
+            <button id="roomAiPolicyLow" type="button" data-ai-policy="low" aria-pressed="true">低级</button>
+            <button id="roomAiPolicyHigh" type="button" data-ai-policy="high" aria-pressed="false">高级</button>
           </div>
-          <label class="lobby-ai-policy-label">
-            新房间 AI
-            <select id="roomAiPolicySelect" class="wide-input battle-ai-policy-select">
-              <option value="low">低级 AI</option>
-              <option value="high">高级 AI</option>
-            </select>
-          </label>
+          <select id="roomAiPolicySelect" class="photon-native-select" tabindex="-1" aria-hidden="true">
+            <option value="low">低级 AI</option><option value="high">高级 AI</option>
+          </select>
         </div>
-        <div id="lobbyMessage" class="lobby-message" aria-live="polite"></div>
       </section>
-
-      <section class="room-table-grid" id="roomTableGrid" aria-label="房间桌位">
-        <button class="room-table-slot room-table-empty" type="button" data-slot-index="0"></button>
-        <button class="room-table-slot room-table-empty" type="button" data-slot-index="1"></button>
-        <button class="room-table-slot room-table-empty" type="button" data-slot-index="2"></button>
+      <div id="lobbyMessage" class="lobby-message photon-lobby-message" aria-live="polite"></div>
+      <section class="room-table-grid photon-room-grid" id="roomTableGrid" aria-label="房间桌位">
+        <article class="room-table-slot room-table-empty" data-slot-index="0"></article>
+        <article class="room-table-slot room-table-empty" data-slot-index="1"></article>
+        <article class="room-table-slot room-table-empty" data-slot-index="2"></article>
       </section>
     </main>
-    <script src="/battle_lobby.js?v=20260708-lobby-split-1"></script>
+    <script src="/photon_scene.js?v=20260710-photon-1" defer></script>
+    <script src="/battle_lobby.js?v=20260710-photon-1" defer></script>
   </body>
 </html>

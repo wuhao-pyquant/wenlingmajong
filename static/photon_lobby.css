@@ -66,3 +66,46 @@
 .photon-auth-page .photon-primary-action[data-pending="true"] { cursor: wait; opacity: .72; }
 .photon-auth-page .photon-password-hint { margin: 9px 0 0; color: #819798; font-size: 11px; }
 .photon-auth-page .photon-inline-message { min-height: 18px; margin-top: 4px; }
+
+/* Room network lobby. */
+.photon-lobby-page .photon-lobby-shell { width: min(1400px, calc(100vw - 40px)); min-height: 100svh; margin: 0 auto; padding: 22px 0 40px; }
+.photon-lobby-page .photon-lobby-topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 48px; }
+.photon-lobby-page .photon-brand { display: inline-flex; align-items: center; gap: 10px; color: #eaffff; text-decoration: none; font-weight: 900; }
+.photon-lobby-page .photon-brand > span { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #68f5ff; border-radius: 7px; color: #68f5ff; box-shadow: 0 0 22px rgba(104,245,255,.28); }
+.photon-lobby-page .photon-account-cluster { display: flex; align-items: center; gap: 9px; }
+.photon-lobby-page .photon-account-cluster a, .photon-lobby-page .photon-account-cluster button { display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px; border: 1px solid rgba(104,245,255,.2); border-radius: 5px; background: rgba(3,15,18,.74); color: #dfffff; text-decoration: none; }
+.photon-lobby-page .photon-online-dot { width: 7px; height: 7px; border-radius: 50%; background: #45e58c; box-shadow: 0 0 12px #45e58c; }
+.photon-lobby-page .photon-lobby-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: clamp(34px, 7vh, 76px) 0 20px; }
+.photon-lobby-page .photon-lobby-heading h1 { margin: 5px 0; color: #fff; font-size: clamp(36px, 5vw, 64px); letter-spacing: 0; }
+.photon-lobby-page .photon-lobby-heading p { margin: 0; color: #90a6a7; }
+.photon-lobby-page .photon-ai-control { display: grid; gap: 7px; min-width: 224px; }
+.photon-lobby-page .photon-ai-control > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid rgba(104,245,255,.2); border-radius: 7px; background: rgba(3,15,18,.7); }
+.photon-lobby-page [data-ai-policy] { min-height: 36px; border: 0; border-radius: 5px; background: transparent; color: #91a7a8; }
+.photon-lobby-page [data-ai-policy][aria-pressed="true"] { background: rgba(104,245,255,.14); color: #eaffff; box-shadow: inset 0 0 0 1px rgba(104,245,255,.28); }
+.photon-lobby-page .photon-native-select { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.photon-lobby-page .photon-room-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.photon-lobby-page .room-table-slot { display: grid; grid-template-rows: auto minmax(220px, 1fr) auto auto; gap: 12px; min-height: 430px; padding: 15px; border: 1px solid rgba(104,245,255,.2); border-radius: 8px; background: rgba(3,16,19,.82); color: #eaffff; box-shadow: 0 18px 48px rgba(0,0,0,.3); backdrop-filter: blur(14px); }
+.photon-lobby-page .room-table-mine { border-color: #68f5ff; box-shadow: 0 0 0 2px rgba(104,245,255,.12), 0 18px 52px rgba(0,0,0,.34); }
+.photon-lobby-page .room-table-empty .room-status-tag { color: #aebabb; background: rgba(174,186,187,.12); }
+.photon-lobby-page .room-status-open .room-status-tag, .photon-lobby-page .room-status-waiting .room-status-tag { color: #62e39d; background: rgba(69,229,140,.12); }
+.photon-lobby-page .room-status-playing .room-status-tag, .photon-lobby-page .room-status-round_over .room-status-tag { color: #ffbf63; background: rgba(255,191,99,.12); }
+.photon-lobby-page .room-status-closing .room-status-tag, .photon-lobby-page .room-status-closed .room-status-tag { color: #ee5a54; background: rgba(238,90,84,.12); }
+.photon-lobby-page .room-table-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; }
+.photon-lobby-page .room-table-index { color: #68f5ff; font-size: 12px; font-weight: 900; }
+.photon-lobby-page .room-status-tag { justify-self: end; }
+.photon-lobby-page .room-table-icon { position: relative; min-height: 220px; }
+.photon-lobby-page .room-table-felt { position: absolute; inset: 48px 52px; border: 7px solid #35484c; border-radius: 8px; background: #0f665a; box-shadow: inset 0 0 0 1px rgba(104,245,255,.22), 0 16px 34px rgba(0,0,0,.36); }
+.photon-lobby-page .room-table-seat { position: absolute; display: grid; place-items: center; width: 78px; min-height: 47px; padding: 4px; border: 1px solid rgba(104,245,255,.22); border-radius: 6px; background: rgba(223,255,255,.92); color: #173b3c; }
+.photon-lobby-page .room-table-seat b, .photon-lobby-page .room-table-seat em { display: block; max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; }
+.photon-lobby-page .room-table-seat.ready { border-color: #ffbf63; box-shadow: 0 0 14px rgba(255,191,99,.3); }
+.photon-lobby-page .room-table-seat.mine { border-color: #68f5ff; box-shadow: 0 0 16px rgba(104,245,255,.4); }
+.photon-lobby-page .room-table-seat:nth-of-type(2) { top: 0; left: 50%; transform: translateX(-50%); }
+.photon-lobby-page .room-table-seat:nth-of-type(3) { top: 50%; right: 0; transform: translateY(-50%); }
+.photon-lobby-page .room-table-seat:nth-of-type(4) { bottom: 0; left: 50%; transform: translateX(-50%); }
+.photon-lobby-page .room-table-seat:nth-of-type(5) { top: 50%; left: 0; transform: translateY(-50%); }
+.photon-lobby-page .room-table-meta { display: flex; justify-content: space-between; gap: 10px; color: #90a6a7; font-size: 13px; }
+.photon-lobby-page .room-table-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.photon-lobby-page .room-primary-action, .photon-lobby-page .table-ready-btn { min-height: 40px; border-radius: 5px; font-weight: 900; }
+.photon-lobby-page .room-primary-action { border-color: #68f5ff; background: #68f5ff; color: #061012; }
+.photon-lobby-page .table-ready-btn { border-color: #ffbf63; background: #ffbf63; color: #1f241a; }
+.photon-lobby-page .room-primary-action:disabled { cursor: not-allowed; opacity: .42; }

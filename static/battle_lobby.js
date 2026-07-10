@@ -308,7 +308,21 @@ function normalizeRoomSummary(room) {
     room_revision: room?.room_revision ?? null,
     game_started: Boolean(room?.game_started),
     seats: Array.isArray(room?.seats) ? room.seats : [],
+    ready_accounts: Array.isArray(room?.ready_accounts) ? [...room.ready_accounts].sort() : [],
   };
+}
+
+function roomFingerprint(room) {
+  return JSON.stringify(room ? normalizeRoomSummary(room) : null);
+}
+
+function changedRoomSlots(previousRooms, nextRooms) {
+  return Array.from({ length: 3 }, (_, slotIndex) => ({
+    slot_index: slotIndex,
+    room_id: nextRooms[slotIndex]?.room_id || "",
+    status: roomStatusValue(nextRooms[slotIndex]),
+    changed: roomFingerprint(previousRooms[slotIndex]) !== roomFingerprint(nextRooms[slotIndex]),
+  })).filter((entry) => entry.changed);
 }
 
 function saveRoomSummary(room) {
@@ -390,7 +404,10 @@ function tableActionText(room) {
 }
 
 function renderTableSlots(rooms, maxRooms) {
-  lastRooms = Array.isArray(rooms) ? rooms.slice(0, 3) : [];
+  const previousRooms = lastRooms;
+  const nextRooms = Array.isArray(rooms) ? rooms.slice(0, 3) : [];
+  const changes = changedRoomSlots(previousRooms, nextRooms);
+  lastRooms = nextRooms;
   lastMaxRooms = Number(maxRooms) || 3;
   const grid = $("roomTableGrid");
   if (!grid) return;
@@ -401,8 +418,9 @@ function renderTableSlots(rooms, maxRooms) {
     const mine = Boolean(accountSeat(room));
     const emptySeat = room ? firstEmptySeat(room) : null;
     const disabled = Boolean(room && status === "playing" && !mine) || Boolean(room && !emptySeat && !mine);
-    slot.disabled = disabled;
+    const ready = Boolean(room && (room.ready_accounts || []).includes(accountValue()));
     slot.dataset.roomId = room?.room_id || "";
+    slot.setAttribute("aria-disabled", String(disabled));
     slot.className = [
       "room-table-slot",
       room ? "room-table-active" : "room-table-empty",
@@ -411,24 +429,22 @@ function renderTableSlots(rooms, maxRooms) {
       status ? `room-status-${status}` : "",
     ].filter(Boolean).join(" ");
     slot.innerHTML = `
-      <span class="room-table-head">
+      <header class="room-table-head">
+        <span class="room-table-index">0${index + 1}</span>
         <strong>${escapeHtml(room?.room_name || `${index + 1}号桌`)}</strong>
-        <span class="tag">${escapeHtml(room ? roomStatusLabel(room.status) : "空桌")}</span>
-      </span>
-      <span class="room-table-icon" aria-hidden="true">
-        <span class="room-table-felt"></span>
+        <span class="tag room-status-tag">${escapeHtml(room ? roomStatusLabel(room.status) : "空桌")}</span>
+      </header>
+      <div class="room-table-icon" aria-label="四个座位状态">
+        <span class="room-table-felt" aria-hidden="true"></span>
         ${renderSeatDots(room)}
-      </span>
-      <span class="room-table-meta">
-        <span>房主：${escapeHtml(room?.owner_account || "-")}</span>
-        <span>AI：${room?.ai_policy === "high" ? "高级" : "低级"}</span>
-      </span>
-      <span class="room-table-actions">
-        <span class="room-table-action-label">${tableActionText(room)}</span>
-        ${mine ? `<button class="table-ready-btn" type="button" data-room-id="${escapeHtml(room.room_id)}">${(room.ready_accounts || []).includes(accountValue()) ? "取消准备" : "准备"}</button>` : ""}
-      </span>
-    `;
+      </div>
+      <div class="room-table-meta"><span>房主：${escapeHtml(room?.owner_account || "-")}</span><span>AI：${room?.ai_policy === "high" ? "高级" : "低级"}</span></div>
+      <footer class="room-table-actions">
+        <button class="room-primary-action" type="button" data-slot-index="${index}" ${disabled ? "disabled" : ""}>${tableActionText(room)}</button>
+        ${mine ? `<button class="table-ready-btn" type="button" data-room-id="${escapeHtml(room.room_id)}">${ready ? "取消准备" : "准备"}</button>` : ""}
+      </footer>`;
   });
+  if (changes.length) void photonBridgeCall("notifyRoomChanges", changes);
 }
 
 async function createOrJoinTable(slotIndex) {
@@ -492,6 +508,7 @@ function enterRoom(roomId, room = null) {
   if (!roomId) return;
   saveRoomId(roomId);
   if (room) saveRoomSummary(room);
+  void photonBridgeCall("destroy");
   window.location.href = `/battle?room_id=${encodeURIComponent(roomId)}`;
 }
 
@@ -502,6 +519,7 @@ async function logout() {
     console.warn("logout failed", error);
   } finally {
     clearSession();
+    void photonBridgeCall("destroy");
     window.location.href = "/battle-login?notice=" + encodeURIComponent("已退出登录。");
   }
 }
@@ -537,18 +555,35 @@ function bindAuthEvents() {
 
 function bindLobbyEvents() {
   if ($("logoutBtn")) $("logoutBtn").addEventListener("click", logout);
+  document.querySelectorAll("[data-ai-policy]").forEach((button) => {
+    button.addEventListener("click", () => setRoomAiPolicy(button.dataset.aiPolicy || "low"));
+  });
   if ($("roomTableGrid")) {
     $("roomTableGrid").addEventListener("click", (event) => {
       const readyButton = event.target.closest(".table-ready-btn");
-      if (readyButton) {
-        event.stopPropagation();
-        toggleReady(readyButton.dataset.roomId);
-        return;
-      }
-      const slot = event.target.closest(".room-table-slot");
-      if (!slot || slot.disabled) return;
-      createOrJoinTable(Number(slot.dataset.slotIndex || 0));
+      if (readyButton) return void toggleReady(readyButton.dataset.roomId);
+      const primaryButton = event.target.closest(".room-primary-action");
+      if (!primaryButton || primaryButton.disabled) return;
+      createOrJoinTable(Number(primaryButton.dataset.slotIndex || 0));
     });
+  }
+}
+
+function setRoomAiPolicy(value) {
+  const normalized = value === "high" ? "high" : "low";
+  if ($("roomAiPolicySelect")) $("roomAiPolicySelect").value = normalized;
+  document.querySelectorAll("[data-ai-policy]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.aiPolicy === normalized));
+  });
+}
+
+function consumePhotonLobbyTransition() {
+  try {
+    const pending = sessionStorage.getItem(PHOTON_TRANSITION_KEY) === "1";
+    sessionStorage.removeItem(PHOTON_TRANSITION_KEY);
+    return pending;
+  } catch {
+    return false;
   }
 }
 
@@ -570,9 +605,14 @@ async function initAuthPage() {
 }
 
 async function initLobbyPage() {
+  const revealFromAuth = consumePhotonLobbyTransition();
   bindLobbyEvents();
+  setRoomAiPolicy($("roomAiPolicySelect")?.value || "low");
   updateSessionUi();
   await loadRooms();
+  if (revealFromAuth) {
+    await photonBridgeCall("playLobbyReveal");
+  }
   roomRefreshTimer = window.setInterval(() => {
     loadRooms().catch((error) => console.warn("room refresh failed", error));
   }, 3000);

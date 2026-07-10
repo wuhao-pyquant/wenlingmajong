@@ -12,6 +12,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhotonFrontendTests(unittest.TestCase):
+    def test_lobby_page_uses_semantic_room_articles_and_photon_updates(self) -> None:
+        html = (ROOT / "static" / "battle_lobby.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
+        self.assertIn('class="standalone-page room-lobby-page photon-lobby-page"', html)
+        self.assertIn('id="photonSceneRoot"', html)
+        self.assertIn('data-page="lobby"', html)
+        self.assertEqual(html.count('<article class="room-table-slot'), 3)
+        self.assertIn('id="roomAiPolicyLow"', html)
+        self.assertIn('id="roomAiPolicyHigh"', html)
+        for element_id in (
+            "currentAccountLabel", "currentRoleLabel", "adminEntry", "logoutBtn",
+            "roomAiPolicySelect", "lobbyMessage", "roomTableGrid",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn("function changedRoomSlots", script)
+        self.assertIn("function setRoomAiPolicy", script)
+        self.assertIn("ready_accounts", script)
+        self.assertIn("room-primary-action", script)
+        self.assertIn("notifyRoomChanges", script)
+        self.assertIn("playLobbyReveal", script)
+        self.assertIn("window.setInterval", script)
+        self.assertIn("3000", script)
+        self.assertNotIn('slot.disabled = disabled', script)
+
+    def test_lobby_markup_never_nests_ready_button_inside_room_button(self) -> None:
+        html = (ROOT / "static" / "battle_lobby.html").read_text(encoding="utf-8")
+        self.assertNotIn('<button class="room-table-slot', html)
+        self.assertIn('<article class="room-table-slot', html)
+
     def test_auth_page_uses_photon_stage_and_preserves_contract_ids(self) -> None:
         html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")
         script = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
