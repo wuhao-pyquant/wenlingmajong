@@ -3,10 +3,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import PropertyMock, patch
 
 from wenling_lan_host.auth import AuthIdentity
 from wenling_lan_host.battle_db import BattleDatabase
-from wenling_lan_host.rooms import RoomManager
+from wenling_lan_host.rooms import BattleRoom, RoomManager
 
 
 class RoomManagerTests(unittest.TestCase):
@@ -96,8 +97,9 @@ class RoomManagerTests(unittest.TestCase):
             room_obj.session.ready_account("owner", "low")
             room_obj.session.ready_account("bob", "low")
 
-            with self.assertRaisesRegex(ValueError, "playing"):
-                manager.set_room_settings(room["room_id"], owner, room_name="renamed")
+            with patch.object(BattleRoom, "status", new_callable=PropertyMock, return_value="playing"):
+                with self.assertRaisesRegex(ValueError, "playing"):
+                    manager.set_room_settings(room["room_id"], owner, room_name="renamed")
 
     def test_room_manager_disallows_kick_while_playing(self) -> None:
         manager, temp = self.make_manager()
@@ -111,8 +113,9 @@ class RoomManagerTests(unittest.TestCase):
             room_obj.session.ready_account("owner", "low")
             room_obj.session.ready_account("bob", "low")
 
-            with self.assertRaisesRegex(ValueError, "playing"):
-                manager.kick(room["room_id"], owner, "bob")
+            with patch.object(BattleRoom, "status", new_callable=PropertyMock, return_value="playing"):
+                with self.assertRaisesRegex(ValueError, "playing"):
+                    manager.kick(room["room_id"], owner, "bob")
 
     def test_room_manager_caps_constructed_max_rooms_at_three(self) -> None:
         manager, temp = self.make_manager(max_rooms=99)
