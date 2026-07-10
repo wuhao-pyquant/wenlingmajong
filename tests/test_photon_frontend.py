@@ -12,6 +12,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhotonFrontendTests(unittest.TestCase):
+    def test_auth_page_uses_photon_stage_and_preserves_contract_ids(self) -> None:
+        html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "battle_lobby.js").read_text(encoding="utf-8")
+        battle_html = (ROOT / "static" / "battle.html").read_text(encoding="utf-8")
+
+        self.assertIn('class="standalone-page auth-only-page photon-auth-page"', html)
+        self.assertIn('id="photonSceneRoot"', html)
+        self.assertIn('data-page="auth"', html)
+        self.assertIn('/photon_lobby.css?v=20260710-photon-1', html)
+        self.assertIn('/photon_scene.js?v=20260710-photon-1', html)
+        self.assertIn('role="tablist"', html)
+        self.assertIn('data-auth-mode="login"', html)
+        self.assertIn('data-auth-mode="register"', html)
+        self.assertIn('id="loginAuthPanel"', html)
+        self.assertIn('id="registerAuthPanel"', html)
+        self.assertIn('class="photon-auth-panel photon-register-panel" role="tabpanel" hidden', html)
+        for element_id in (
+            "loginAccountInput", "loginPasswordInput", "loginBtn",
+            "registerAccountInput", "registerPasswordInput", "inviteCodeInput", "registerBtn",
+            "authStatusTitle", "authStatusDetail", "lobbyMessage",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertNotIn("photon_scene.js", battle_html)
+        self.assertIn("function setAuthMode", script)
+        self.assertIn("function applyAuthDefaults", script)
+        self.assertIn("async function navigateToLobby", script)
+        self.assertIn('invite.value = "WL1234"', script)
+        self.assertIn('input.placeholder = "推荐密码1234"', script)
+        self.assertIn('PHOTON_TRANSITION_KEY', script)
+
     def run_node_json(self, source: str) -> dict:
         completed = subprocess.run(
             ["node", "-e", source],

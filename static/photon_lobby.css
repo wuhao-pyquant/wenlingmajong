@@ -38,3 +38,30 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Authentication stage. */
+.photon-auth-page .photon-auth-shell { min-height: 100svh; padding: 24px clamp(18px, 4vw, 64px); display: grid; grid-template-rows: auto 1fr; }
+.photon-auth-page .photon-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.photon-auth-page .photon-brand { display: inline-flex; align-items: center; gap: 10px; color: #eaffff; text-decoration: none; font-weight: 900; }
+.photon-auth-page .photon-brand > span { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #68f5ff; border-radius: 7px; color: #68f5ff; box-shadow: 0 0 22px rgba(104,245,255,.28); }
+.photon-auth-page .photon-system-status { display: inline-flex; align-items: center; gap: 7px; color: #a9c4c5; font-size: 12px; font-weight: 800; }
+.photon-auth-page .photon-system-status i { width: 7px; height: 7px; border-radius: 50%; background: #45e58c; box-shadow: 0 0 12px #45e58c; }
+.photon-auth-page .photon-auth-stage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); align-items: center; gap: clamp(24px, 5vw, 80px); }
+.photon-auth-page .photon-auth-copy > span { color: #68f5ff; font-size: 12px; font-weight: 900; }
+.photon-auth-page .photon-auth-copy h1 { margin: 12px 0; color: #fff; font-size: clamp(42px, 6vw, 84px); line-height: 1.02; letter-spacing: 0; }
+.photon-auth-page .photon-auth-copy p { max-width: 520px; margin: 0; color: #9bb0b1; font-size: 16px; line-height: 1.7; }
+.photon-auth-page .photon-auth-console { align-self: end; margin-bottom: 4vh; padding: 14px; border: 1px solid rgba(104,245,255,.26); border-radius: 8px; background: rgba(3,15,18,.84); box-shadow: 0 18px 54px rgba(0,0,0,.34), 0 0 30px rgba(104,245,255,.08); backdrop-filter: blur(16px); }
+.photon-auth-page .photon-auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid rgba(104,245,255,.18); border-radius: 7px; }
+.photon-auth-page .photon-auth-tabs button { min-height: 38px; border: 0; border-radius: 5px; background: transparent; color: #8ca3a4; font-weight: 800; }
+.photon-auth-page .photon-auth-tabs button[aria-selected="true"] { background: rgba(104,245,255,.14); color: #dfffff; box-shadow: inset 0 0 0 1px rgba(104,245,255,.25); }
+.photon-auth-page .photon-auth-status { display: grid; gap: 3px; min-height: 54px; padding: 12px 2px 6px; color: #a7bcbc; }
+.photon-auth-page .photon-auth-status strong { color: #eaffff; }
+.photon-auth-page .photon-auth-status.bad, .photon-auth-page .photon-auth-status.bad strong { color: #ff7771; }
+.photon-auth-page .photon-auth-panel { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.photon-auth-page [hidden] { display: none !important; }
+.photon-auth-page .photon-register-panel { grid-template-columns: 1fr 1fr 1fr auto; }
+.photon-auth-page .photon-auth-panel label { display: grid; gap: 5px; color: #9eb1b2; font-size: 12px; font-weight: 800; }
+.photon-auth-page .photon-auth-panel input { min-width: 0; height: 42px; border: 1px solid rgba(104,245,255,.18); border-radius: 5px; background: rgba(255,255,255,.035); color: #eaffff; }
+.photon-auth-page .photon-primary-action { align-self: end; min-width: 112px; min-height: 42px; border-color: #68f5ff; background: #68f5ff; color: #061012; font-weight: 900; box-shadow: 0 0 20px rgba(104,245,255,.25); }
+.photon-auth-page .photon-password-hint { margin: 9px 0 0; color: #819798; font-size: 11px; }
+.photon-auth-page .photon-inline-message { min-height: 18px; margin-top: 4px; }

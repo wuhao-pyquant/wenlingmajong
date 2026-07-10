@@ -3,6 +3,7 @@ const TOKEN_KEY = "wenling.online.token.v1";
 const ROLE_KEY = "wenling.online.role.v1";
 const ROOM_KEY = "wenling.online.room_id.v1";
 const ROOM_SUMMARY_KEY = "wenling.online.room_summary.v1";
+const PHOTON_TRANSITION_KEY = "wenling.photon.auth_to_lobby.v1";
 
 const $ = (id) => document.getElementById(id);
 const isAuthPage = Boolean($("loginBtn") || $("registerBtn"));
@@ -11,6 +12,48 @@ let roomRefreshTimer = null;
 let loadingRooms = false;
 let lastRooms = [];
 let lastMaxRooms = 3;
+
+function applyAuthDefaults() {
+  const invite = $("inviteCodeInput");
+  if (invite) {
+    invite.type = "password";
+    invite.value = "WL1234";
+  }
+  ["loginPasswordInput", "registerPasswordInput"].forEach((id) => {
+    const input = $(id);
+    if (input) input.placeholder = "推荐密码1234";
+  });
+}
+
+function setAuthMode(mode) {
+  const registerMode = mode === "register";
+  const loginPanel = $("loginAuthPanel");
+  const registerPanel = $("registerAuthPanel");
+  if (loginPanel) loginPanel.hidden = registerMode;
+  if (registerPanel) registerPanel.hidden = !registerMode;
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.setAttribute("aria-selected", String(button.dataset.authMode === mode));
+  });
+  document.body.dataset.authMode = registerMode ? "register" : "login";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function navigateToLobby({ animate = true } = {}) {
+  try {
+    sessionStorage.setItem(PHOTON_TRANSITION_KEY, "1");
+  } catch {
+    // sessionStorage can be unavailable in hardened browser profiles.
+  }
+  if (animate) {
+    const transition = window.WenlingPhotonScene?.playAuthSuccess?.();
+    await Promise.race([Promise.resolve(transition).catch(() => undefined), wait(700)]);
+  }
+  window.WenlingPhotonScene?.destroy?.();
+  window.location.href = "/battle-lobby";
+}
 
 function tokenValue() {
   try {
@@ -125,8 +168,9 @@ function setAuthStatus(title, detail, bad = false) {
   const statusDetail = $("authStatusDetail");
   if (statusTitle) statusTitle.textContent = title;
   if (statusDetail) statusDetail.textContent = detail;
-  const card = document.querySelector(".auth-status-card");
-  if (card) card.classList.toggle("bad", Boolean(bad));
+  const statusCard = document.querySelector(".auth-status-card, .photon-auth-status");
+  if (statusCard) statusCard.classList.toggle("bad", Boolean(bad));
+  window.WenlingPhotonScene?.setStatus?.(bad ? "error" : title.includes("成功") ? "success" : "loading");
 }
 
 function readNoticeFromUrl() {
@@ -157,7 +201,7 @@ async function login() {
     });
     setSession(payload);
     setAuthStatus("登录成功", "正在进入选桌大厅。");
-    window.location.href = "/battle-lobby";
+    await navigateToLobby();
   } catch (error) {
     setAuthStatus("登录失败", error.message, true);
     setMessage(error.message, true);
@@ -174,7 +218,7 @@ async function register() {
     });
     setSession(payload);
     setAuthStatus("注册成功", "账号已登录，正在进入选桌大厅。");
-    window.location.href = "/battle-lobby";
+    await navigateToLobby();
   } catch (error) {
     setAuthStatus("注册失败", error.message, true);
     setMessage(error.message, true);
@@ -405,6 +449,9 @@ async function logout() {
 }
 
 function bindAuthEvents() {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.authMode || "login"));
+  });
   if ($("loginBtn")) $("loginBtn").addEventListener("click", login);
   if ($("registerBtn")) $("registerBtn").addEventListener("click", register);
   ["loginAccountInput", "loginPasswordInput"].forEach((id) => {
@@ -441,6 +488,8 @@ function bindLobbyEvents() {
 }
 
 async function initAuthPage() {
+  applyAuthDefaults();
+  setAuthMode("login");
   readNoticeFromUrl();
   bindAuthEvents();
   if (tokenValue()) {
@@ -448,7 +497,7 @@ async function initAuthPage() {
       const me = await api("/api/auth/me");
       setSession({ ...me, session_token: tokenValue() });
       setAuthStatus("已登录", "正在进入选桌大厅。");
-      window.location.href = "/battle-lobby";
+      await navigateToLobby({ animate: false });
     } catch {
       clearSession();
     }

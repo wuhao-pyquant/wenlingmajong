@@ -5,54 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>温岭麻将 登录</title>
     <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
+    <link rel="stylesheet" href="/photon_lobby.css?v=20260710-photon-1" />
   </head>
-  <body class="standalone-page auth-only-page">
-    <main class="standalone-shell online-lobby-shell auth-shell">
-      <header class="standalone-head">
-        <div>
-          <h1>温岭麻将</h1>
-          <p>先登录或注册账号，成功后进入选桌大厅。</p>
-        </div>
+  <body class="standalone-page auth-only-page photon-auth-page">
+    <div id="photonSceneRoot" class="photon-scene-root" data-page="auth" aria-hidden="true"></div>
+    <main class="photon-auth-shell">
+      <header class="photon-topbar">
+        <a class="photon-brand" href="/battle-login" aria-label="温岭麻将登录页"><span>W</span><b>温岭麻将</b></a>
+        <span class="photon-system-status"><i></i> SYSTEM ONLINE</span>
       </header>
-
-      <section class="auth-status-card" aria-live="polite">
-        <strong id="authStatusTitle">未登录</strong>
-        <span id="authStatusDetail">请输入账号和密码。</span>
-      </section>
-
-      <section class="auth-grid">
-        <section class="standalone-card auth-card">
-          <h2>账号登录</h2>
-          <label>用户名 <input id="loginAccountInput" class="wide-input" autocomplete="username" /></label>
-          <label>密码 <input id="loginPasswordInput" class="wide-input" type="password" autocomplete="current-password" /></label>
-          <button id="loginBtn" class="primary" type="button">登录</button>
+      <section class="photon-auth-stage">
+        <div class="photon-auth-copy">
+          <span>PHOTON GAME NETWORK</span>
+          <h1>连接牌桌<br />进入对局</h1>
+          <p>温岭好友牌局 · ONLINE</p>
+        </div>
+        <section class="photon-auth-console" aria-label="账号入口">
+          <div class="photon-auth-tabs" role="tablist" aria-label="账号操作">
+            <button type="button" role="tab" data-auth-mode="login" aria-selected="true" aria-controls="loginAuthPanel">登录</button>
+            <button type="button" role="tab" data-auth-mode="register" aria-selected="false" aria-controls="registerAuthPanel">邀请码注册</button>
+          </div>
+          <section class="photon-auth-status" aria-live="polite">
+            <strong id="authStatusTitle">未登录</strong>
+            <span id="authStatusDetail">请输入账号和密码。</span>
+          </section>
+          <section id="loginAuthPanel" class="photon-auth-panel" role="tabpanel">
+            <label>用户名<input id="loginAccountInput" class="wide-input" autocomplete="username" /></label>
+            <label>密码<input id="loginPasswordInput" class="wide-input" type="password" autocomplete="current-password" /></label>
+            <button id="loginBtn" class="primary photon-primary-action" type="button">连接大厅</button>
+          </section>
+          <section id="registerAuthPanel" class="photon-auth-panel photon-register-panel" role="tabpanel" hidden>
+            <label>用户名<input id="registerAccountInput" class="wide-input" maxlength="12" autocomplete="username" /></label>
+            <label>密码<input id="registerPasswordInput" class="wide-input" type="password" autocomplete="new-password" /></label>
+            <label>邀请码<input id="inviteCodeInput" class="wide-input invite-code-input" maxlength="6" autocomplete="off" /></label>
+            <button id="registerBtn" class="gold photon-primary-action" type="button">注册并连接</button>
+          </section>
+          <p class="photon-password-hint">推荐密码1234</p>
+          <div id="lobbyMessage" class="lobby-message photon-inline-message" aria-live="polite"></div>
         </section>
-
-        <section class="standalone-card auth-card">
-          <h2>邀请码注册</h2>
-          <label>用户名 <input id="registerAccountInput" class="wide-input" maxlength="12" autocomplete="username" /></label>
-          <label>密码 <input id="registerPasswordInput" class="wide-input" type="password" autocomplete="new-password" /></label>
-          <label>邀请码 <input id="inviteCodeInput" class="wide-input invite-code-input" maxlength="6" autocomplete="off" /></label>
-          <button id="registerBtn" class="gold" type="button">注册并登录</button>
-        </section>
       </section>
-
-      <p class="auth-password-hint">推荐密码1234</p>
-      <div id="lobbyMessage" class="lobby-message" aria-live="polite"></div>
     </main>
-    <script>
-      document.addEventListener("DOMContentLoaded", () => {
-        const invite = document.getElementById("inviteCodeInput");
-        if (invite) {
-          invite.type = "password";
-          invite.value = "WL1234";
-        }
-        ["loginPasswordInput", "registerPasswordInput"].forEach((id) => {
-          const input = document.getElementById(id);
-          if (input) input.placeholder = "推荐密码1234";
-        });
-      });
-    </script>
-    <script src="/battle_lobby.js?v=20260708-lobby-split-1"></script>
+    <script src="/photon_scene.js?v=20260710-photon-1" defer></script>
+    <script src="/battle_lobby.js?v=20260710-photon-1" defer></script>
   </body>
 </html>
