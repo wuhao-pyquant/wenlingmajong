@@ -22,13 +22,16 @@
   }
 
   const testExports = { PHOTON_BUDGETS, selectInitialQuality, nextQuality };
-  if (typeof module !== "undefined" && module.exports) module.exports = testExports;
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = testExports;
+    return;
+  }
   if (typeof window === "undefined" || typeof document === "undefined") return;
 
   const root = document.getElementById("photonSceneRoot");
-  if (!root) return;
+  if (!root || (root.dataset.page !== "auth" && root.dataset.page !== "lobby")) return;
 
-  const disposers = [];
+  const pendingTimers = new Map();
   let activeLayer = null;
   let destroyed = false;
   let effectBoostUntil = 0;
@@ -48,11 +51,36 @@
     }
   }
 
+  function scheduleTimer(callback, ms) {
+    const timerId = window.setTimeout(() => {
+      pendingTimers.delete(timerId);
+      if (!destroyed) callback();
+    }, ms);
+    pendingTimers.set(timerId, null);
+    return timerId;
+  }
+
   function wait(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
+    if (destroyed) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timerId = window.setTimeout(() => {
+        pendingTimers.delete(timerId);
+        resolve();
+      }, ms);
+      pendingTimers.set(timerId, resolve);
+    });
+  }
+
+  function clearPendingTimers() {
+    for (const [timerId, settle] of pendingTimers) {
+      window.clearTimeout(timerId);
+      settle?.();
+    }
+    pendingTimers.clear();
   }
 
   function sceneTransition(name, duration) {
+    if (destroyed) return Promise.resolve();
     root.dataset.photonTransition = name;
     effectBoostUntil = performance.now() + duration;
     return wait(duration).finally(() => {
@@ -94,6 +122,7 @@
     }
 
     function render() {
+      frameId = 0;
       if (!running || document.hidden) return;
       context.clearRect(0, 0, canvas.width, canvas.height);
       for (const point of points) {
@@ -118,7 +147,6 @@
     resize();
     root.replaceChildren(canvas);
     setRootMode("canvas");
-    frameId = window.requestAnimationFrame(render);
     window.addEventListener("resize", resize);
 
     activeLayer = {
@@ -131,6 +159,7 @@
         canvas.remove();
       },
     };
+    activeLayer.resume();
   }
 
   function startThreeLayer(THREE, quality) {
@@ -175,6 +204,11 @@
       scene.add(light);
       return light;
     });
+    if (quality !== "desktop") {
+      const staticLight = new THREE.PointLight(0xffd08a, quality === "low" ? 14 : 18, 14, 2);
+      staticLight.position.set(-3.2, 2.2, 3.5);
+      scene.add(staticLight);
+    }
 
     function tileTexture(glyph, glyphColor) {
       const canvas = document.createElement("canvas");
@@ -222,6 +256,7 @@
     let sampleStartedAt = performance.now();
     let sampledFrames = 0;
     let restartScheduled = false;
+    let animationRunning = false;
 
     function resize() {
       const width = Math.max(1, root.clientWidth);
@@ -259,10 +294,10 @@
       if (restartScheduled || next === quality) return;
       restartScheduled = true;
       renderer.setAnimationLoop(null);
-      window.setTimeout(() => {
+      scheduleTimer(() => {
         if (destroyed) return;
         if (next === "canvas") startCanvasFallback();
-        else startThreeLayer(THREE, next);
+        else startThreeLayerSafely(THREE, next);
       }, 0);
     }
 
@@ -314,10 +349,21 @@
     renderer.domElement.addEventListener("webglcontextlost", onContextLost);
 
     activeLayer = {
-      pause() { renderer.setAnimationLoop(null); },
-      resume() { renderer.setAnimationLoop(renderFrame); },
+      pause() {
+        if (!animationRunning) return;
+        renderer.setAnimationLoop(null);
+        animationRunning = false;
+      },
+      resume() {
+        if (animationRunning || document.hidden || destroyed) return;
+        sampleStartedAt = performance.now();
+        sampledFrames = 0;
+        animationRunning = true;
+        renderer.setAnimationLoop(renderFrame);
+      },
       destroy() {
         renderer.setAnimationLoop(null);
+        animationRunning = false;
         renderer.domElement.removeEventListener("webglcontextlost", onContextLost);
         window.removeEventListener("resize", resize);
         scene.traverse((object) => {
@@ -333,7 +379,16 @@
         renderer.domElement.remove();
       },
     };
-    renderer.setAnimationLoop(renderFrame);
+    activeLayer.resume();
+  }
+
+  function startThreeLayerSafely(THREE, quality) {
+    try {
+      startThreeLayer(THREE, quality);
+    } catch (error) {
+      console.warn("photon renderer unavailable; using canvas fallback", error);
+      if (!destroyed) startCanvasFallback();
+    }
   }
 
   async function boot() {
@@ -348,7 +403,7 @@
     if (quality === "canvas") return startCanvasFallback();
     try {
       const THREE = await import("/vendor/three/three.module.min.js?v=0.185.1");
-      if (!destroyed) startThreeLayer(THREE, quality);
+      if (!destroyed) startThreeLayerSafely(THREE, quality);
     } catch (error) {
       console.warn("photon scene unavailable; using canvas fallback", error);
       if (!destroyed) startCanvasFallback();
@@ -368,18 +423,24 @@
     document.removeEventListener("visibilitychange", onVisibilityChange);
     window.removeEventListener("pagehide", destroy);
     window.removeEventListener("beforeunload", destroy);
-    for (const dispose of disposers.splice(0)) dispose();
+    clearPendingTimers();
+    delete root.dataset.photonTransition;
+    delete root.dataset.photonRoomChanges;
+    effectBoostUntil = 0;
   }
 
   window.WenlingPhotonScene = {
-    playAuthSuccess: () => sceneTransition("auth-success", 650),
-    playLobbyReveal: () => sceneTransition("lobby-reveal", 620),
+    playAuthSuccess: () => destroyed ? Promise.resolve() : sceneTransition("auth-success", 650),
+    playLobbyReveal: () => destroyed ? Promise.resolve() : sceneTransition("lobby-reveal", 620),
     notifyRoomChanges(changes) {
+      if (destroyed) return;
       root.dataset.photonRoomChanges = JSON.stringify(changes || []);
       effectBoostUntil = performance.now() + 700;
-      window.setTimeout(() => delete root.dataset.photonRoomChanges, 700);
+      scheduleTimer(() => delete root.dataset.photonRoomChanges, 700);
     },
-    setStatus(kind) { root.dataset.photonStatus = kind || "idle"; },
+    setStatus(kind) {
+      if (!destroyed) root.dataset.photonStatus = kind || "idle";
+    },
     destroy,
   };
 
