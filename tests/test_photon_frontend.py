@@ -299,6 +299,365 @@ class PhotonFrontendTests(unittest.TestCase):
         source = source.replace("__BRIDGE_KIND__", json.dumps(bridge_kind))
         return self.run_node_json(source.replace("__PROBE__", probe))
 
+    def run_lobby_probe(self, probe: str) -> dict:
+        source = r"""
+            const fs = require('fs');
+            const vm = require('vm');
+            const fetchCalls = [];
+            const pendingFetches = [];
+            const intervals = [];
+            const localValues = new Map([
+              ['wenling.online.account.v1', 'alice'],
+              ['wenling.online.token.v1', 'token'],
+              ['wenling.online.role.v1', 'player'],
+            ]);
+            const sessionValues = new Map();
+            let fetchMode = 'success';
+            let navigationCount = 0;
+            let roomPayload = {
+              rooms: [{
+                room_id: 'room-1', room_name: '1号桌', owner_account: 'alice',
+                ai_policy: 'low', status: 'open', room_generation: 4,
+                seats: [{account: 'alice', absolute_seat: 0}, {account: ''}, {account: ''}, {account: ''}],
+                ready_accounts: [],
+              }],
+              max_rooms: 3,
+            };
+
+            function createClassList() {
+              const values = new Set();
+              return {
+                toggle(name, force) {
+                  if (force) values.add(name); else values.delete(name);
+                },
+                contains(name) { return values.has(name); },
+              };
+            }
+
+            function createElement(id, dataset = {}) {
+              const listeners = new Map();
+              const attributes = new Map();
+              return {
+                id,
+                dataset: {...dataset},
+                attributes,
+                classList: createClassList(),
+                className: '',
+                disabled: false,
+                hidden: false,
+                value: '',
+                textContent: '',
+                setAttribute(name, value) { attributes.set(name, String(value)); },
+                getAttribute(name) { return attributes.get(name) || null; },
+                addEventListener(type, callback) {
+                  if (!listeners.has(type)) listeners.set(type, []);
+                  listeners.get(type).push(callback);
+                },
+                dispatch(type, event = {}) {
+                  event.target = this;
+                  for (const callback of listeners.get(type) || []) callback(event);
+                },
+              };
+            }
+
+            const slots = Array.from({length: 3}, (_, index) => {
+              const slot = createElement(`slot-${index}`, {slotIndex: String(index)});
+              slot.innerHTML = '';
+              return slot;
+            });
+            const grid = createElement('roomTableGrid');
+            grid.querySelectorAll = (selector) => selector === '.room-table-slot' ? slots : [];
+            const elements = {
+              roomTableGrid: grid,
+              currentAccountLabel: createElement('currentAccountLabel'),
+              currentRoleLabel: createElement('currentRoleLabel'),
+              adminEntry: createElement('adminEntry'),
+              logoutBtn: createElement('logoutBtn'),
+              roomAiPolicySelect: createElement('roomAiPolicySelect'),
+              roomAiPolicyLow: createElement('roomAiPolicyLow', {aiPolicy: 'low'}),
+              roomAiPolicyHigh: createElement('roomAiPolicyHigh', {aiPolicy: 'high'}),
+              lobbyMessage: createElement('lobbyMessage'),
+            };
+            elements.roomAiPolicySelect.value = 'low';
+            const policyButtons = [elements.roomAiPolicyLow, elements.roomAiPolicyHigh];
+
+            const document = {
+              body: {dataset: {}},
+              getElementById(id) { return elements[id] || null; },
+              querySelector() { return null; },
+              querySelectorAll(selector) {
+                if (selector === '[data-ai-policy]') return policyButtons;
+                if (selector === '[data-auth-mode]') return [];
+                return [];
+              },
+            };
+            const location = {
+              search: '',
+              _href: '/battle-lobby',
+              get href() { return this._href; },
+              set href(value) { this._href = value; navigationCount += 1; },
+            };
+            const window = {
+              location,
+              WenlingPhotonScene: {notifyRoomChanges() {}, playLobbyReveal() {}, destroy() {}},
+              addEventListener() {},
+              setInterval(callback, delay) {
+                intervals.push({callback, delay});
+                return intervals.length;
+              },
+              clearInterval() {},
+              setTimeout,
+              clearTimeout,
+            };
+            const localStorage = {
+              getItem(key) { return localValues.get(key) || null; },
+              setItem(key, value) { localValues.set(key, String(value)); },
+              removeItem(key) { localValues.delete(key); },
+            };
+            const sessionStorage = {
+              getItem(key) { return sessionValues.get(key) || null; },
+              setItem(key, value) { sessionValues.set(key, String(value)); },
+              removeItem(key) { sessionValues.delete(key); },
+            };
+            function response(payload) {
+              return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => JSON.stringify(payload),
+              };
+            }
+            function fetch(path, options = {}) {
+              fetchCalls.push({path, method: options.method || 'GET', body: options.body || null});
+              if (fetchMode === 'pending') {
+                return new Promise((resolve, reject) => pendingFetches.push({path, resolve, reject}));
+              }
+              if (fetchMode === 'reject') return Promise.reject(new Error('network down'));
+              if (path === '/api/lobby/rooms' && options.method === 'POST') {
+                return Promise.resolve(response({room_id: 'created-room'}));
+              }
+              if (path === '/api/lobby/rooms') return Promise.resolve(response(roomPayload));
+              return Promise.resolve(response({room_id: 'created-room'}));
+            }
+
+            function buttonState(slotIndex, className) {
+              const html = slots[slotIndex].innerHTML || '';
+              const match = html.match(new RegExp(`<button class="${className}"[^>]*>`));
+              const tag = match ? match[0] : '';
+              return {
+                exists: Boolean(tag),
+                disabled: /\sdisabled(?:\s|>)/.test(tag),
+                busy: /aria-busy="true"/.test(tag),
+                pending: /data-pending="true"/.test(tag),
+              };
+            }
+
+            const sandbox = {
+              URLSearchParams,
+              console,
+              document,
+              fetch,
+              localStorage,
+              Promise,
+              sessionStorage,
+              setTimeout,
+              clearTimeout,
+              window,
+            };
+            sandbox.flush = async () => {
+              for (let index = 0; index < 24; index += 1) await Promise.resolve();
+            };
+            sandbox.testState = {
+              elements,
+              slots,
+              fetchCalls,
+              intervals,
+              buttonState,
+              setRoomPayload(value) { roomPayload = value; },
+              get roomPayload() { return roomPayload; },
+              get navigationCount() { return navigationCount; },
+              get fetchMode() { return fetchMode; },
+              set fetchMode(value) { fetchMode = value; },
+              rejectPending(message) {
+                for (const pending of pendingFetches.splice(0)) pending.reject(new Error(message));
+              },
+              resolvePending(payload = {room_id: 'created-room'}) {
+                for (const pending of pendingFetches.splice(0)) pending.resolve(response(payload));
+              },
+            };
+
+            vm.runInNewContext(fs.readFileSync('./static/battle_lobby.js', 'utf8'), sandbox);
+            (async () => {
+              try {
+                await sandbox.flush();
+                const result = await (async () => {
+                  __PROBE__
+                })();
+                await sandbox.flush();
+                console.log(JSON.stringify({result, error: null}));
+              } catch (error) {
+                console.log(JSON.stringify({result: null, error: error.message}));
+              }
+            })();
+        """
+        return self.run_node_json(source.replace("__PROBE__", probe))
+
+    def test_lobby_ai_select_and_segments_stay_synchronized(self) -> None:
+        payload = self.run_lobby_probe(
+            """
+            const {elements} = sandbox.testState;
+            elements.roomAiPolicySelect.value = 'high';
+            elements.roomAiPolicySelect.dispatch('change');
+            const fromSelect = {
+              low: elements.roomAiPolicyLow.getAttribute('aria-pressed'),
+              high: elements.roomAiPolicyHigh.getAttribute('aria-pressed'),
+            };
+            elements.roomAiPolicyLow.dispatch('click');
+            return {fromSelect, selectAfterButton: elements.roomAiPolicySelect.value};
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "fromSelect": {"low": "false", "high": "true"},
+                "selectAfterButton": "low",
+            },
+            "error": None,
+        })
+
+    def test_lobby_ready_guard_persists_across_render_and_recovers(self) -> None:
+        payload = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const first = sandbox.toggleReady('room-1');
+            const second = sandbox.toggleReady('room-1');
+            await sandbox.flush();
+            const during = state.buttonState(0, 'table-ready-btn');
+            sandbox.renderTableSlots(state.roomPayload.rooms, state.roomPayload.max_rooms);
+            const afterPollRender = state.buttonState(0, 'table-ready-btn');
+            const readyPosts = state.fetchCalls.filter((call) => call.path.endsWith('/ready')).length;
+            state.fetchMode = 'success';
+            state.rejectPending('ready failed');
+            await Promise.all([first, second]);
+            await sandbox.flush();
+            return {
+              readyPosts,
+              during,
+              afterPollRender,
+              afterFailure: state.buttonState(0, 'table-ready-btn'),
+            };
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "readyPosts": 1,
+                "during": {"exists": True, "disabled": True, "busy": True, "pending": True},
+                "afterPollRender": {"exists": True, "disabled": True, "busy": True, "pending": True},
+                "afterFailure": {"exists": True, "disabled": False, "busy": False, "pending": False},
+            },
+            "error": None,
+        })
+
+    def test_lobby_primary_guard_blocks_duplicates_and_recovers(self) -> None:
+        failed = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            state.setRoomPayload({rooms: [], max_rooms: 3});
+            sandbox.renderTableSlots([], 3);
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const first = sandbox.createOrJoinTable(0);
+            const second = sandbox.createOrJoinTable(0);
+            await sandbox.flush();
+            const during = state.buttonState(0, 'room-primary-action');
+            sandbox.renderTableSlots([], 3);
+            const afterPollRender = state.buttonState(0, 'room-primary-action');
+            const operationPosts = state.fetchCalls.filter((call) => call.method === 'POST').length;
+            state.fetchMode = 'success';
+            state.rejectPending('create failed');
+            await Promise.all([first, second]);
+            await sandbox.flush();
+            return {
+              operationPosts,
+              during,
+              afterPollRender,
+              afterFailure: state.buttonState(0, 'room-primary-action'),
+            };
+            """
+        )
+        succeeded = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            state.setRoomPayload({rooms: [], max_rooms: 3});
+            sandbox.renderTableSlots([], 3);
+            state.fetchCalls.length = 0;
+            state.fetchMode = 'pending';
+            const first = sandbox.createOrJoinTable(0);
+            const second = sandbox.createOrJoinTable(0);
+            await sandbox.flush();
+            state.resolvePending({room_id: 'created-room'});
+            await Promise.all([first, second]);
+            return {
+              operationPosts: state.fetchCalls.filter((call) => call.method === 'POST').length,
+              navigationCount: state.navigationCount,
+            };
+            """
+        )
+        self.assertEqual(failed, {
+            "result": {
+                "operationPosts": 1,
+                "during": {"exists": True, "disabled": True, "busy": True, "pending": True},
+                "afterPollRender": {"exists": True, "disabled": True, "busy": True, "pending": True},
+                "afterFailure": {"exists": True, "disabled": False, "busy": False, "pending": False},
+            },
+            "error": None,
+        })
+        self.assertEqual(succeeded, {
+            "result": {"operationPosts": 1, "navigationCount": 1},
+            "error": None,
+        })
+
+    def test_lobby_capacity_disables_and_blocks_out_of_range_slots(self) -> None:
+        payload = self.run_lobby_probe(
+            """
+            const state = sandbox.testState;
+            state.fetchCalls.length = 0;
+            sandbox.renderTableSlots([], 1);
+            const maxOne = [0, 1, 2].map((index) => state.buttonState(index, 'room-primary-action').disabled);
+            await sandbox.createOrJoinTable(1);
+            const callsAfterMaxOne = state.fetchCalls.length;
+            sandbox.renderTableSlots([], 2);
+            const maxTwo = [0, 1, 2].map((index) => state.buttonState(index, 'room-primary-action').disabled);
+            await sandbox.createOrJoinTable(2);
+            sandbox.renderTableSlots([], 9);
+            const cappedThree = [0, 1, 2].map((index) => state.buttonState(index, 'room-primary-action').disabled);
+            return {maxOne, maxTwo, cappedThree, totalCalls: state.fetchCalls.length, callsAfterMaxOne};
+            """
+        )
+        self.assertEqual(payload, {
+            "result": {
+                "maxOne": [False, True, True],
+                "maxTwo": [False, False, True],
+                "cappedThree": [False, False, False],
+                "totalCalls": 0,
+                "callsAfterMaxOne": 0,
+            },
+            "error": None,
+        })
+
+    def test_lobby_phone_css_uses_one_contained_column(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+        phone = css[css.rfind("@media (max-width: 760px)"):]
+        self.assertIn("@media (max-width: 760px)", phone)
+        self.assertIn(".photon-lobby-page .photon-room-grid", phone)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", phone)
+        self.assertIn(".photon-lobby-page .room-table-slot", phone)
+        self.assertIn("min-width: 0", phone)
+        self.assertIn("overflow: hidden", phone)
+        self.assertIn(".photon-lobby-page .room-table-icon", phone)
+        self.assertIn("max-width: 360px", phone)
+
     def test_auth_bridge_is_best_effort_and_navigation_is_bounded(self) -> None:
         bounded = self.run_auth_probe(
             """

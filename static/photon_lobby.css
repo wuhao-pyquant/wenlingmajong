@@ -108,4 +108,20 @@
 .photon-lobby-page .room-primary-action, .photon-lobby-page .table-ready-btn { min-height: 40px; border-radius: 5px; font-weight: 900; }
 .photon-lobby-page .room-primary-action { border-color: #68f5ff; background: #68f5ff; color: #061012; }
 .photon-lobby-page .table-ready-btn { border-color: #ffbf63; background: #ffbf63; color: #1f241a; }
-.photon-lobby-page .room-primary-action:disabled { cursor: not-allowed; opacity: .42; }
+.photon-lobby-page .room-primary-action:disabled, .photon-lobby-page .table-ready-btn:disabled { cursor: not-allowed; opacity: .42; }
+.photon-lobby-page .room-table-unavailable { opacity: .68; }
+.photon-lobby-page [data-pending="true"] { cursor: wait; }
+
+@media (max-width: 760px) {
+  .photon-lobby-page .photon-lobby-shell { width: min(100%, calc(100vw - 24px)); min-width: 0; padding: 14px 0 28px; }
+  .photon-lobby-page .photon-lobby-topbar { align-items: flex-start; flex-wrap: wrap; }
+  .photon-lobby-page .photon-account-cluster { min-width: 0; flex: 1 1 220px; flex-wrap: wrap; justify-content: flex-end; }
+  .photon-lobby-page .photon-lobby-heading { align-items: stretch; flex-direction: column; padding: 28px 0 16px; }
+  .photon-lobby-page .photon-ai-control { width: 100%; min-width: 0; }
+  .photon-lobby-page .photon-room-grid { width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .photon-lobby-page .room-table-slot { width: 100%; min-width: 0; max-width: 100%; min-height: 410px; overflow: hidden; }
+  .photon-lobby-page .room-table-icon { width: 100%; max-width: 360px; justify-self: center; }
+  .photon-lobby-page .room-table-meta { min-width: 0; flex-wrap: wrap; }
+  .photon-lobby-page .room-table-actions { min-width: 0; grid-template-columns: minmax(0, 1fr) auto; }
+  .photon-lobby-page .room-primary-action, .photon-lobby-page .table-ready-btn { min-width: 0; min-height: 44px; }
+}

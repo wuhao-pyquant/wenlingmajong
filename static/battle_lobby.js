@@ -12,6 +12,9 @@ let roomRefreshTimer = null;
 let loadingRooms = false;
 let lastRooms = [];
 let lastMaxRooms = 3;
+const pendingReadyRooms = new Set();
+const pendingPrimarySlots = new Set();
+let roomNavigationStarted = false;
 let authSubmissionPending = false;
 let authNavigationStarted = false;
 
@@ -403,12 +406,18 @@ function tableActionText(room) {
   return "点击入座";
 }
 
+function normalizedMaxRooms(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return 3;
+  return Math.min(3, Math.floor(parsed));
+}
+
 function renderTableSlots(rooms, maxRooms) {
   const previousRooms = lastRooms;
   const nextRooms = Array.isArray(rooms) ? rooms.slice(0, 3) : [];
   const changes = changedRoomSlots(previousRooms, nextRooms);
   lastRooms = nextRooms;
-  lastMaxRooms = Number(maxRooms) || 3;
+  lastMaxRooms = normalizedMaxRooms(maxRooms);
   const grid = $("roomTableGrid");
   if (!grid) return;
   const slots = Array.from(grid.querySelectorAll(".room-table-slot"));
@@ -417,7 +426,12 @@ function renderTableSlots(rooms, maxRooms) {
     const status = roomStatusValue(room);
     const mine = Boolean(accountSeat(room));
     const emptySeat = room ? firstEmptySeat(room) : null;
-    const disabled = Boolean(room && status === "playing" && !mine) || Boolean(room && !emptySeat && !mine);
+    const capacityUnavailable = !room && index >= lastMaxRooms;
+    const primaryPending = pendingPrimarySlots.has(index);
+    const readyPending = Boolean(room && pendingReadyRooms.has(String(room.room_id)));
+    const disabled = capacityUnavailable || primaryPending
+      || Boolean(room && status === "playing" && !mine)
+      || Boolean(room && !emptySeat && !mine);
     const ready = Boolean(room && (room.ready_accounts || []).includes(accountValue()));
     slot.dataset.roomId = room?.room_id || "";
     slot.setAttribute("aria-disabled", String(disabled));
@@ -426,6 +440,8 @@ function renderTableSlots(rooms, maxRooms) {
       room ? "room-table-active" : "room-table-empty",
       mine ? "room-table-mine" : "",
       disabled ? "room-table-disabled" : "",
+      capacityUnavailable ? "room-table-unavailable" : "",
+      primaryPending || readyPending ? "room-table-pending" : "",
       status ? `room-status-${status}` : "",
     ].filter(Boolean).join(" ");
     slot.innerHTML = `
@@ -440,8 +456,8 @@ function renderTableSlots(rooms, maxRooms) {
       </div>
       <div class="room-table-meta"><span>房主：${escapeHtml(room?.owner_account || "-")}</span><span>AI：${room?.ai_policy === "high" ? "高级" : "低级"}</span></div>
       <footer class="room-table-actions">
-        <button class="room-primary-action" type="button" data-slot-index="${index}" ${disabled ? "disabled" : ""}>${tableActionText(room)}</button>
-        ${mine ? `<button class="table-ready-btn" type="button" data-room-id="${escapeHtml(room.room_id)}">${ready ? "取消准备" : "准备"}</button>` : ""}
+        <button class="room-primary-action" type="button" data-slot-index="${index}" data-pending="${primaryPending}" aria-busy="${primaryPending}" ${disabled ? "disabled" : ""}>${capacityUnavailable ? "暂不可用" : primaryPending ? "处理中" : tableActionText(room)}</button>
+        ${mine ? `<button class="table-ready-btn" type="button" data-room-id="${escapeHtml(room.room_id)}" data-pending="${readyPending}" aria-busy="${readyPending}" ${readyPending ? "disabled" : ""}>${readyPending ? "处理中" : ready ? "取消准备" : "准备"}</button>` : ""}
       </footer>`;
   });
   if (changes.length) void photonBridgeCall("notifyRoomChanges", changes);
@@ -453,6 +469,13 @@ async function createOrJoinTable(slotIndex) {
     return;
   }
   const room = roomForSlot(slotIndex);
+  if (roomNavigationStarted || pendingPrimarySlots.has(slotIndex)) return;
+  if (!room && slotIndex >= lastMaxRooms) {
+    setMessage("该桌位超出当前房间容量。", true);
+    return;
+  }
+  pendingPrimarySlots.add(slotIndex);
+  renderTableSlots(lastRooms, lastMaxRooms);
   try {
     if (!room) {
       if (lastRooms.length >= lastMaxRooms) {
@@ -488,12 +511,21 @@ async function createOrJoinTable(slotIndex) {
   } catch (error) {
     setMessage(error.message, true);
     await loadRooms();
+  } finally {
+    if (!roomNavigationStarted) {
+      pendingPrimarySlots.delete(slotIndex);
+      renderTableSlots(lastRooms, lastMaxRooms);
+    }
   }
 }
 
 async function toggleReady(roomId) {
+  const roomKey = String(roomId || "");
+  if (!roomKey || pendingReadyRooms.has(roomKey)) return;
   const room = lastRooms.find((item) => String(item.room_id) === String(roomId));
   if (!room) return;
+  pendingReadyRooms.add(roomKey);
+  renderTableSlots(lastRooms, lastMaxRooms);
   try {
     await post(`/api/battle/${encodeURIComponent(roomId)}/ready`, {
       room_generation: room.room_generation,
@@ -501,11 +533,15 @@ async function toggleReady(roomId) {
     await loadRooms();
   } catch (error) {
     setMessage(error.message, true);
+  } finally {
+    pendingReadyRooms.delete(roomKey);
+    renderTableSlots(lastRooms, lastMaxRooms);
   }
 }
 
 function enterRoom(roomId, room = null) {
-  if (!roomId) return;
+  if (!roomId || roomNavigationStarted) return;
+  roomNavigationStarted = true;
   saveRoomId(roomId);
   if (room) saveRoomSummary(room);
   void photonBridgeCall("destroy");
@@ -558,10 +594,18 @@ function bindLobbyEvents() {
   document.querySelectorAll("[data-ai-policy]").forEach((button) => {
     button.addEventListener("click", () => setRoomAiPolicy(button.dataset.aiPolicy || "low"));
   });
+  if ($("roomAiPolicySelect")) {
+    $("roomAiPolicySelect").addEventListener("change", () => {
+      setRoomAiPolicy($("roomAiPolicySelect").value);
+    });
+  }
   if ($("roomTableGrid")) {
     $("roomTableGrid").addEventListener("click", (event) => {
       const readyButton = event.target.closest(".table-ready-btn");
-      if (readyButton) return void toggleReady(readyButton.dataset.roomId);
+      if (readyButton) {
+        if (readyButton.disabled) return;
+        return void toggleReady(readyButton.dataset.roomId);
+      }
       const primaryButton = event.target.closest(".room-primary-action");
       if (!primaryButton || primaryButton.disabled) return;
       createOrJoinTable(Number(primaryButton.dataset.slotIndex || 0));
