@@ -1252,6 +1252,7 @@ class PhotonFrontendTests(unittest.TestCase):
             "coarse": False,
             "reducedMotion": False,
             "width": 1280,
+            "height": 720,
             "injectThree": False,
             "failRendererAfter": None,
             "failMaterialAfter": None,
@@ -1276,6 +1277,7 @@ class PhotonFrontendTests(unittest.TestCase):
             const materials = [];
             const textures = [];
             const renderers = [];
+            const groups = [];
             const pointLights = [];
             const documentListeners = new Map();
             const windowListeners = new Map();
@@ -1330,8 +1332,8 @@ class PhotonFrontendTests(unittest.TestCase):
 
             const root = {{
               dataset: config.page === null ? {{}} : {{page: config.page}},
-              clientWidth: 1280,
-              clientHeight: 720,
+              clientWidth: config.width,
+              clientHeight: config.height,
               children: [],
               setAttribute(name, value) {{ this.attributes = {{...(this.attributes || {{}}), [name]: value}}; }},
               replaceChildren(...children) {{ this.children = children; }},
@@ -1347,6 +1349,7 @@ class PhotonFrontendTests(unittest.TestCase):
 
             const window = {{
               innerWidth: config.width,
+              innerHeight: config.height,
               devicePixelRatio: 2,
               matchMedia(query) {{
                 return {{
@@ -1398,7 +1401,12 @@ class PhotonFrontendTests(unittest.TestCase):
                 visit(this);
               }}
             }}
-            class Group extends Object3D {{}}
+            class Group extends Object3D {{
+              constructor() {{
+                super();
+                groups.push(this);
+              }}
+            }}
             class Points extends Object3D {{}}
             class LineSegments extends Object3D {{}}
             class Mesh extends Object3D {{}}
@@ -1699,19 +1707,67 @@ class PhotonFrontendTests(unittest.TestCase):
             "lobby": [2.5, 0.25, 0],
         })
 
-    def test_three_resize_recomputes_tile_group_position(self) -> None:
-        script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")
-        resize_start = script.index("resizeCallback = function resize()")
-        resize_end = script.index("    function updateLinks()", resize_start)
-        resize = script[resize_start:resize_end]
-
-        self.assertIn(
-            "tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth, window.innerHeight));",
-            script,
+    def test_three_resize_repositions_auth_tiles_and_preserves_lobby_position(self) -> None:
+        probe = """
+            const tileGroup = groups[0];
+            const initial = {
+              dimensions: [root.clientWidth, root.clientHeight, window.innerWidth, window.innerHeight],
+              position: tileGroup.position.values.slice(),
+            };
+            root.clientWidth = 667;
+            root.clientHeight = 375;
+            window.innerWidth = 667;
+            window.innerHeight = 375;
+            dispatch(windowListeners, 'resize');
+            return {
+              initial,
+              rotated: {
+                dimensions: [root.clientWidth, root.clientHeight, window.innerWidth, window.innerHeight],
+                position: tileGroup.position.values.slice(),
+              },
+            };
+        """
+        auth = self.run_browser_probe(
+            probe,
+            page="auth",
+            width=440,
+            height=956,
+            webgl2=True,
+            injectThree=True,
         )
-        self.assertIn(
-            "tileGroup.position.set(...tileGroupPosition(root.dataset.page, width, height));",
-            resize,
+        lobby = self.run_browser_probe(
+            probe,
+            page="lobby",
+            width=440,
+            height=956,
+            webgl2=True,
+            injectThree=True,
+        )
+
+        self.assertEqual(
+            {"auth": auth, "lobby": lobby},
+            {
+                "auth": {
+                    "initial": {
+                        "dimensions": [440, 956, 440, 956],
+                        "position": [0, 1.15, 0],
+                    },
+                    "rotated": {
+                        "dimensions": [667, 375, 667, 375],
+                        "position": [-2.6, 0.25, 0],
+                    },
+                },
+                "lobby": {
+                    "initial": {
+                        "dimensions": [440, 956, 440, 956],
+                        "position": [2.5, 0.25, 0],
+                    },
+                    "rotated": {
+                        "dimensions": [667, 375, 667, 375],
+                        "position": [2.5, 0.25, 0],
+                    },
+                },
+            },
         )
 
     def test_reduced_motion_transitions_resolve_without_timers(self) -> None:
