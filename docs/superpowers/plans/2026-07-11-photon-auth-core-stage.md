@@ -4,7 +4,7 @@
 
 **Goal:** Remove all login-page promotional copy and turn its former area into a stable, unobstructed stage for the existing white Photon Mahjong core.
 
-**Architecture:** Replace the copy block with an empty visual spacer, keep the auth console and all functional contracts unchanged, and derive the Three.js tile-group position from page type plus viewport width. Keep lobby and battle behavior isolated, and bump the shared Photon cache token so NAS and mobile browsers load the new layout.
+**Architecture:** Replace the copy block with an empty visual spacer, keep the auth console and all functional contracts unchanged, and derive the Three.js tile-group position from page type plus viewport width and height. Keep lobby and battle behavior isolated, and bump the shared Photon cache token so NAS and mobile browsers load the new layout.
 
 **Tech Stack:** Static HTML/CSS, vanilla JavaScript, Three.js 0.185.1, Python `unittest`, Wenling HTTP host, Docker/NAS deployment.
 
@@ -207,8 +207,8 @@ git commit -m "Reserve responsive Photon core space"
 - Modify: `static/photon_scene.js`
 
 **Interfaces:**
-- Consumes: `root.dataset.page`, `window.innerWidth`, and the existing Three.js `tileGroup`.
-- Produces: `tileGroupPosition(page, viewportWidth)` returning `[x, y, z]`, exported through the CommonJS test surface.
+- Consumes: `root.dataset.page`, `window.innerWidth`, `window.innerHeight`, and the existing Three.js `tileGroup`.
+- Produces: `tileGroupPosition(page, viewportWidth, viewportHeight)` returning `[x, y, z]`, exported through the CommonJS test surface and re-applied from the resize callback.
 
 - [ ] **Step 1: Write the failing pure positioning test**
 
@@ -218,15 +218,17 @@ def test_tile_group_position_targets_auth_visual_stage(self) -> None:
         """
         const photon = require('./static/photon_scene.js');
         console.log(JSON.stringify({
-          desktopAuth: photon.tileGroupPosition('auth', 1280),
-          mobileAuth: photon.tileGroupPosition('auth', 440),
-          lobby: photon.tileGroupPosition('lobby', 440),
+          desktopAuth: photon.tileGroupPosition('auth', 1280, 720),
+          portraitAuth: photon.tileGroupPosition('auth', 440, 956),
+          narrowLandscapeAuth: photon.tileGroupPosition('auth', 440, 390),
+          lobby: photon.tileGroupPosition('lobby', 440, 390),
         }));
         """
     )
     self.assertEqual(payload, {
         "desktopAuth": [-2.6, 0.25, 0],
-        "mobileAuth": [0, 1.15, 0],
+        "portraitAuth": [0, 1.15, 0],
+        "narrowLandscapeAuth": [-2.6, 0.25, 0],
         "lobby": [2.5, 0.25, 0],
     })
 ```
@@ -238,22 +240,29 @@ $env:PYTHONPATH='src;packages/wenling_core'
 .\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_tile_group_position_targets_auth_visual_stage -v
 ```
 
-Expected: FAIL because `tileGroupPosition` is undefined.
+Expected: FAIL because the existing width-only helper returns the portrait-centered position for a narrow, low-height landscape viewport and the resize callback does not recompute the tile-group position.
 
-- [ ] **Step 3: Implement and use the pure helper**
+- [ ] **Step 3: Update and use the pure helper**
 
 ```javascript
-function tileGroupPosition(page, viewportWidth) {
+function tileGroupPosition(page, viewportWidth, viewportHeight) {
   if (page === "lobby") return [2.5, 0.25, 0];
+  if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) return [-2.6, 0.25, 0];
   if (Number(viewportWidth) <= 760) return [0, 1.15, 0];
   return [-2.6, 0.25, 0];
 }
 ```
 
-Add `tileGroupPosition` to `testExports`, then replace the current assignment with:
+Keep `tileGroupPosition` in `testExports`, then update the initial assignment to:
 
 ```javascript
-tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth));
+tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth, window.innerHeight));
+```
+
+Inside the existing resize callback, re-apply the position after the renderer and camera update:
+
+```javascript
+tileGroup.position.set(...tileGroupPosition(root.dataset.page, width, height));
 ```
 
 - [ ] **Step 4: Run focused and complete verification**

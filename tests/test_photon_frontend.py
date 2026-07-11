@@ -73,6 +73,18 @@ class PhotonFrontendTests(unittest.TestCase):
     def test_auth_page_reserves_text_free_photon_core_stage(self) -> None:
         html = (ROOT / "static" / "battle_login.html").read_text(encoding="utf-8")
 
+        self.assertIn('<header class="photon-topbar">', html)
+        self.assertIn(
+            '<a class="photon-brand" href="/battle-login" aria-label="温岭麻将登录页"><span>W</span><b>温岭麻将</b></a>',
+            html,
+        )
+        self.assertIn('<span class="photon-system-status"><i></i> SYSTEM ONLINE</span>', html)
+        self.assertIn(
+            '<section class="photon-auth-stage">\n'
+            '        <div class="photon-auth-visual" aria-hidden="true"></div>\n'
+            '        <section class="photon-auth-console" aria-label="账号入口">',
+            html,
+        )
         self.assertIn('<div class="photon-auth-visual" aria-hidden="true"></div>', html)
         for removed_copy in (
             "PHOTON GAME NETWORK",
@@ -898,12 +910,33 @@ class PhotonFrontendTests(unittest.TestCase):
 
     def test_auth_visual_stage_reserves_responsive_core_space(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+        desktop = css[css.index("/* Authentication stage. */"):css.index("/* Room network lobby. */")]
+        phone = self.css_at_rule_block(css, "@media (max-width: 760px)")
+        landscape = self.css_at_rule_block(
+            css, "@media (max-height: 520px) and (orientation: landscape)"
+        )
 
-        self.assertIn(".photon-auth-page .photon-auth-visual", css)
-        self.assertIn("min-height: clamp(320px, 62vh, 680px)", css)
-        self.assertIn("grid-template-rows: minmax(240px, 1fr) auto", css)
-        self.assertIn("min-height: clamp(240px, 38svh, 360px)", css)
-        self.assertIn("min-height: 180px", css)
+        self.assertIn(
+            ".photon-auth-page .photon-auth-stage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); align-items: center; gap: clamp(24px, 5vw, 80px); }",
+            desktop,
+        )
+        self.assertIn(
+            ".photon-auth-page .photon-auth-visual { min-width: 0; min-height: clamp(320px, 62vh, 680px); }",
+            desktop,
+        )
+        self.assertIn(
+            ".photon-auth-page .photon-auth-stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 1fr) auto; align-content: stretch; gap: 18px; min-height: 0; padding-top: 12px; }",
+            phone,
+        )
+        self.assertIn(
+            ".photon-auth-page .photon-auth-visual { min-height: clamp(240px, 38svh, 360px); }",
+            phone,
+        )
+        self.assertIn(
+            ".photon-auth-page .photon-auth-stage { grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr); grid-template-rows: minmax(0, 1fr); align-items: end; gap: 14px; padding-top: 8px; }",
+            landscape,
+        )
+        self.assertIn(".photon-auth-page .photon-auth-visual { min-height: 180px; }", landscape)
 
     def test_photon_css_separates_narrow_layout_from_coarse_touch_targets(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
@@ -1652,17 +1685,34 @@ class PhotonFrontendTests(unittest.TestCase):
             """
             const photon = require('./static/photon_scene.js');
             console.log(JSON.stringify({
-              desktopAuth: photon.tileGroupPosition('auth', 1280),
-              mobileAuth: photon.tileGroupPosition('auth', 440),
-              lobby: photon.tileGroupPosition('lobby', 440),
+              desktopAuth: photon.tileGroupPosition('auth', 1280, 720),
+              portraitAuth: photon.tileGroupPosition('auth', 440, 956),
+              narrowLandscapeAuth: photon.tileGroupPosition('auth', 440, 390),
+              lobby: photon.tileGroupPosition('lobby', 440, 390),
             }));
             """
         )
         self.assertEqual(payload, {
             "desktopAuth": [-2.6, 0.25, 0],
-            "mobileAuth": [0, 1.15, 0],
+            "portraitAuth": [0, 1.15, 0],
+            "narrowLandscapeAuth": [-2.6, 0.25, 0],
             "lobby": [2.5, 0.25, 0],
         })
+
+    def test_three_resize_recomputes_tile_group_position(self) -> None:
+        script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")
+        resize_start = script.index("resizeCallback = function resize()")
+        resize_end = script.index("    function updateLinks()", resize_start)
+        resize = script[resize_start:resize_end]
+
+        self.assertIn(
+            "tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth, window.innerHeight));",
+            script,
+        )
+        self.assertIn(
+            "tileGroup.position.set(...tileGroupPosition(root.dataset.page, width, height));",
+            resize,
+        )
 
     def test_reduced_motion_transitions_resolve_without_timers(self) -> None:
         payload = self.run_browser_probe(

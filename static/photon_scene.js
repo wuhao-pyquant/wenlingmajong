@@ -21,8 +21,9 @@
     return current;
   }
 
-  function tileGroupPosition(page, viewportWidth) {
+  function tileGroupPosition(page, viewportWidth, viewportHeight) {
     if (page === "lobby") return [2.5, 0.25, 0];
+    if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) return [-2.6, 0.25, 0];
     if (Number(viewportWidth) <= 760) return [0, 1.15, 0];
     return [-2.6, 0.25, 0];
   }
@@ -310,7 +311,7 @@
     }
 
     const tileGroup = new THREE.Group();
-    tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth));
+    tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth, window.innerHeight));
     const tileGeometry = ownGeometry(new THREE.BoxGeometry(1.2, 1.6, 0.18));
     const glyphs = [
       ["發", "#167c61"],
@@ -342,6 +343,7 @@
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      tileGroup.position.set(...tileGroupPosition(root.dataset.page, width, height));
     };
 
     function updateLinks() {

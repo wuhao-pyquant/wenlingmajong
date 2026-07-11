@@ -1028,9 +1028,7 @@ Append an auth-only section to `photon_lobby.css` defining these scoped selector
 .photon-auth-page .photon-system-status { display: inline-flex; align-items: center; gap: 7px; color: #a9c4c5; font-size: 12px; font-weight: 800; }
 .photon-auth-page .photon-system-status i { width: 7px; height: 7px; border-radius: 50%; background: #45e58c; box-shadow: 0 0 12px #45e58c; }
 .photon-auth-page .photon-auth-stage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); align-items: center; gap: clamp(24px, 5vw, 80px); }
-.photon-auth-page .photon-auth-copy > span { color: #68f5ff; font-size: 12px; font-weight: 900; }
-.photon-auth-page .photon-auth-copy h1 { margin: 12px 0; color: #fff; font-size: clamp(42px, 6vw, 84px); line-height: 1.02; letter-spacing: 0; }
-.photon-auth-page .photon-auth-copy p { max-width: 520px; margin: 0; color: #9bb0b1; font-size: 16px; line-height: 1.7; }
+.photon-auth-page .photon-auth-visual { min-width: 0; min-height: clamp(320px, 62vh, 680px); }
 .photon-auth-page .photon-auth-console { align-self: end; margin-bottom: 4vh; padding: 14px; border: 1px solid rgba(104,245,255,.26); border-radius: 8px; background: rgba(3,15,18,.84); box-shadow: 0 18px 54px rgba(0,0,0,.34), 0 0 30px rgba(104,245,255,.08); backdrop-filter: blur(16px); }
 .photon-auth-page .photon-auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid rgba(104,245,255,.18); border-radius: 7px; }
 .photon-auth-page .photon-auth-tabs button { min-height: 38px; border: 0; border-radius: 5px; background: transparent; color: #8ca3a4; font-weight: 800; }
@@ -1503,8 +1501,6 @@ Append:
 @media (max-width: 760px), (pointer: coarse) {
   .photon-auth-page .photon-auth-shell { min-height: 100svh; padding: 16px 14px max(14px, env(safe-area-inset-bottom)); }
   .photon-auth-page .photon-auth-stage { grid-template-columns: 1fr; align-content: space-between; gap: 18px; padding-top: 22px; }
-  .photon-auth-page .photon-auth-copy h1 { font-size: 42px; }
-  .photon-auth-page .photon-auth-copy p { font-size: 14px; }
   .photon-auth-page .photon-auth-console { align-self: end; width: 100%; margin: 0; }
   .photon-auth-page .photon-auth-panel, .photon-auth-page .photon-register-panel { grid-template-columns: 1fr; max-height: min(48svh, 420px); overflow-y: auto; }
   .photon-auth-page .photon-primary-action { width: 100%; }
@@ -1529,8 +1525,6 @@ Append:
   .photon-auth-page .photon-auth-shell { padding-top: 10px; padding-bottom: 10px; }
   .photon-auth-page .photon-topbar { min-height: 36px; }
   .photon-auth-page .photon-auth-stage { grid-template-columns: .8fr 1.2fr; align-items: end; gap: 14px; padding-top: 8px; }
-  .photon-auth-page .photon-auth-copy h1 { font-size: 32px; }
-  .photon-auth-page .photon-auth-copy p { display: none; }
   .photon-auth-page .photon-auth-console { max-height: calc(100svh - 62px); overflow-y: auto; }
   .photon-auth-page .photon-auth-panel, .photon-auth-page .photon-register-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
   .photon-lobby-page .photon-lobby-heading { padding-top: 18px; }
