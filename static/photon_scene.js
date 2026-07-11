@@ -21,7 +21,13 @@
     return current;
   }
 
-  const testExports = { PHOTON_BUDGETS, selectInitialQuality, nextQuality };
+  function tileGroupPosition(page, viewportWidth) {
+    if (page === "lobby") return [2.5, 0.25, 0];
+    if (Number(viewportWidth) <= 760) return [0, 1.15, 0];
+    return [-2.6, 0.25, 0];
+  }
+
+  const testExports = { PHOTON_BUDGETS, selectInitialQuality, nextQuality, tileGroupPosition };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = testExports;
     return;
@@ -304,7 +310,7 @@
     }
 
     const tileGroup = new THREE.Group();
-    tileGroup.position.set(root.dataset.page === "lobby" ? 2.5 : 2.1, 0.25, 0);
+    tileGroup.position.set(...tileGroupPosition(root.dataset.page, window.innerWidth));
     const tileGeometry = ownGeometry(new THREE.BoxGeometry(1.2, 1.6, 0.18));
     const glyphs = [
       ["發", "#167c61"],

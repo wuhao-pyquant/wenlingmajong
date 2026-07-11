@@ -1647,6 +1647,23 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertEqual(payload["mobileBudget"]["maxLinks"], 420)
         self.assertEqual(payload["mobileBudget"]["pixelRatio"], 1.2)
 
+    def test_tile_group_position_targets_auth_visual_stage(self) -> None:
+        payload = self.run_node_json(
+            """
+            const photon = require('./static/photon_scene.js');
+            console.log(JSON.stringify({
+              desktopAuth: photon.tileGroupPosition('auth', 1280),
+              mobileAuth: photon.tileGroupPosition('auth', 440),
+              lobby: photon.tileGroupPosition('lobby', 440),
+            }));
+            """
+        )
+        self.assertEqual(payload, {
+            "desktopAuth": [-2.6, 0.25, 0],
+            "mobileAuth": [0, 1.15, 0],
+            "lobby": [2.5, 0.25, 0],
+        })
+
     def test_reduced_motion_transitions_resolve_without_timers(self) -> None:
         payload = self.run_browser_probe(
             """
@@ -1760,7 +1777,7 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertEqual(
             payload,
             {
-                "exports": ["PHOTON_BUDGETS", "nextQuality", "selectInitialQuality"],
+                "exports": ["PHOTON_BUDGETS", "nextQuality", "selectInitialQuality", "tileGroupPosition"],
                 "mode": None,
                 "bridge": False,
                 "rafCount": 0,
