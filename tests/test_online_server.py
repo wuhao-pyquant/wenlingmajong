@@ -109,7 +109,7 @@ class OnlineServerTests(unittest.TestCase):
                 html = response.read().decode("utf-8")
             self.assertIn(expected, html)
 
-    def test_photon_assets_serve_locally_and_battle_page_is_isolated(self) -> None:
+    def test_photon_assets_serve_for_remote_clients_and_battle_page_is_isolated(self) -> None:
         login_html = self.open_path("/battle-login").decode("utf-8")
         lobby_html = self.open_path("/battle-lobby").decode("utf-8")
         battle_html = self.open_path("/battle").decode("utf-8")
@@ -125,7 +125,10 @@ class OnlineServerTests(unittest.TestCase):
             "/vendor/three/three.core.min.js",
             "/vendor/three/LICENSE",
         ):
-            request = urllib.request.Request(self.base + path)
+            request = urllib.request.Request(
+                self.base + path,
+                headers={"X-Forwarded-For": "192.168.1.22"},
+            )
             with urllib.request.urlopen(request, timeout=5) as response:
                 self.assertGreater(int(response.headers["Content-Length"]), 100)
                 self.assertEqual(response.status, 200)

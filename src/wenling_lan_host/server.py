@@ -59,6 +59,11 @@ PUBLIC_STATIC_PATHS = {
     "/battle_table_renderer.js",
     "/battle_lobby.js",
     "/battle_admin.js",
+    "/photon_scene.js",
+    "/photon_lobby.css",
+    "/vendor/three/three.module.min.js",
+    "/vendor/three/three.core.min.js",
+    "/vendor/three/LICENSE",
 }
 
 

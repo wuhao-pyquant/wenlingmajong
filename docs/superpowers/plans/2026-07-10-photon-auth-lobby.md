@@ -1123,7 +1123,7 @@ Add to `PhotonFrontendTests`:
 Add this live static-resource test to `OnlineServerTests`:
 
 ```python
-    def test_photon_assets_serve_locally_and_battle_page_is_isolated(self) -> None:
+    def test_photon_assets_serve_for_remote_clients_and_battle_page_is_isolated(self) -> None:
         login_html = self.open_path("/battle-login").decode("utf-8")
         lobby_html = self.open_path("/battle-lobby").decode("utf-8")
         battle_html = self.open_path("/battle").decode("utf-8")
@@ -1139,7 +1139,10 @@ Add this live static-resource test to `OnlineServerTests`:
             "/vendor/three/three.core.min.js",
             "/vendor/three/LICENSE",
         ):
-            request = urllib.request.Request(self.base + path)
+            request = urllib.request.Request(
+                self.base + path,
+                headers={"X-Forwarded-For": "192.168.1.22"},
+            )
             with urllib.request.urlopen(request, timeout=5) as response:
                 self.assertGreater(int(response.headers["Content-Length"]), 100)
                 self.assertEqual(response.status, 200)
@@ -1151,7 +1154,7 @@ Run:
 
 ```powershell
 $env:PYTHONPATH='src;packages/wenling_core'
-.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_lobby_page_uses_semantic_room_articles_and_photon_updates tests.test_photon_frontend.PhotonFrontendTests.test_lobby_markup_never_nests_ready_button_inside_room_button tests.test_online_server.OnlineServerTests.test_photon_assets_serve_locally_and_battle_page_is_isolated -v
+.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_lobby_page_uses_semantic_room_articles_and_photon_updates tests.test_photon_frontend.PhotonFrontendTests.test_lobby_markup_never_nests_ready_button_inside_room_button tests.test_online_server.OnlineServerTests.test_photon_assets_serve_for_remote_clients_and_battle_page_is_isolated -v
 ```
 
 Expected: FAIL because the page still uses three room buttons, has no AI segments or diff functions, and `/battle-lobby` does not yet load the photon assets.
@@ -1408,7 +1411,7 @@ Run:
 
 ```powershell
 $env:PYTHONPATH='src;packages/wenling_core'
-.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend tests.test_online_server.OnlineServerTests.test_task6_review_owner_controls_frontend_contract tests.test_online_server.OnlineServerTests.test_online_lobby_page_is_public_from_remote_clients tests.test_online_server.OnlineServerTests.test_photon_assets_serve_locally_and_battle_page_is_isolated -v
+.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend tests.test_online_server.OnlineServerTests.test_task6_review_owner_controls_frontend_contract tests.test_online_server.OnlineServerTests.test_online_lobby_page_is_public_from_remote_clients tests.test_online_server.OnlineServerTests.test_photon_assets_serve_for_remote_clients_and_battle_page_is_isolated -v
 node --check static\battle_lobby.js
 ```
 
@@ -1579,7 +1582,7 @@ Run:
 
 ```powershell
 $env:PYTHONPATH='src;packages/wenling_core'
-.\.venv\Scripts\python.exe -m unittest tests.test_online_server.OnlineServerTests.test_photon_assets_serve_locally_and_battle_page_is_isolated -v
+.\.venv\Scripts\python.exe -m unittest tests.test_online_server.OnlineServerTests.test_photon_assets_serve_for_remote_clients_and_battle_page_is_isolated -v
 ```
 
 Expected: PASS. Stop execution if any page or local asset returns a failure; the failing URL identifies the owning task to reopen.
