@@ -21,9 +21,23 @@
     return current;
   }
 
+  const AUTH_STAGE_VERTICAL_FOV_DEGREES = 50;
+  const AUTH_STAGE_CAMERA_DISTANCE = 12;
+  const AUTH_STAGE_CENTER_NDC_X = -0.6;
+
+  function authLandscapeStageX(viewportWidth, viewportHeight) {
+    const halfFovRadians = (AUTH_STAGE_VERTICAL_FOV_DEGREES * Math.PI / 180) / 2;
+    const halfVisibleWorldWidth = AUTH_STAGE_CAMERA_DISTANCE
+      * Math.tan(halfFovRadians)
+      * (Number(viewportWidth) / Number(viewportHeight));
+    return AUTH_STAGE_CENTER_NDC_X * halfVisibleWorldWidth;
+  }
+
   function tileGroupPosition(page, viewportWidth, viewportHeight) {
     if (page === "lobby") return [2.5, 0.25, 0];
-    if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) return [-2.6, 0.25, 0];
+    if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) {
+      return [authLandscapeStageX(viewportWidth, viewportHeight), 0.25, 0];
+    }
     if (Number(viewportWidth) <= 760) return [0, 1.15, 0];
     return [-2.6, 0.25, 0];
   }

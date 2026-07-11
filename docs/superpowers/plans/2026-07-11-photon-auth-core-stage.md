@@ -208,7 +208,7 @@ git commit -m "Reserve responsive Photon core space"
 
 **Interfaces:**
 - Consumes: `root.dataset.page`, `window.innerWidth`, `window.innerHeight`, and the existing Three.js `tileGroup`.
-- Produces: `tileGroupPosition(page, viewportWidth, viewportHeight)` returning `[x, y, z]`, exported through the CommonJS test surface and re-applied from the resize callback.
+- Produces: `tileGroupPosition(page, viewportWidth, viewportHeight)` returning `[x, y, z]`, exported through the CommonJS test surface and re-applied from the resize callback. Low-height landscape auth projects the left visual-column center at NDC x `-0.6` into world space using a 50-degree vertical FOV reference and camera distance `12`.
 
 - [ ] **Step 1: Write the failing pure positioning test**
 
@@ -220,34 +220,52 @@ def test_tile_group_position_targets_auth_visual_stage(self) -> None:
         console.log(JSON.stringify({
           desktopAuth: photon.tileGroupPosition('auth', 1280, 720),
           portraitAuth: photon.tileGroupPosition('auth', 440, 956),
-          narrowLandscapeAuth: photon.tileGroupPosition('auth', 440, 390),
+          landscapeAuth: photon.tileGroupPosition('auth', 667, 375),
+          wideLandscapeAuth: photon.tileGroupPosition('auth', 844, 390),
           lobby: photon.tileGroupPosition('lobby', 440, 390),
         }));
         """
     )
-    self.assertEqual(payload, {
-        "desktopAuth": [-2.6, 0.25, 0],
-        "portraitAuth": [0, 1.15, 0],
-        "narrowLandscapeAuth": [-2.6, 0.25, 0],
-        "lobby": [2.5, 0.25, 0],
-    })
+    self.assertEqual(payload["desktopAuth"], [-2.6, 0.25, 0])
+    self.assertEqual(payload["portraitAuth"], [0, 1.15, 0])
+    self.assertEqual(payload["lobby"], [2.5, 0.25, 0])
+    self.assertAlmostEqual(payload["landscapeAuth"][0], -5.971722393396173)
+    self.assertEqual(payload["landscapeAuth"][1:], [0.25, 0])
+    self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -7.265790710452039)
+    self.assertEqual(payload["wideLandscapeAuth"][1:], [0.25, 0])
 ```
+
+Update the behavioral Three probe test to boot auth and lobby at `440x956`, dispatch the registered resize listener at `667x375` and `844x390`, and inspect the live `Group.position`. Auth must use the projected X values above while lobby remains `[2.5, 0.25, 0]` throughout.
 
 - [ ] **Step 2: Run the test and verify RED**
 
 ```powershell
 $env:PYTHONPATH='src;packages/wenling_core'
-.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_tile_group_position_targets_auth_visual_stage -v
+.\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_tile_group_position_targets_auth_visual_stage tests.test_photon_frontend.PhotonFrontendTests.test_three_resize_repositions_auth_tiles_and_preserves_lobby_position -v
 ```
 
-Expected: FAIL because the existing width-only helper returns the portrait-centered position for a narrow, low-height landscape viewport and the resize callback does not recompute the tile-group position.
+Expected: both tests FAIL because low-height landscape auth still uses the desktop offset `-2.6`, placing the core near 37% of viewport width instead of the left visual-column center at 20%.
 
 - [ ] **Step 3: Update and use the pure helper**
 
 ```javascript
+const AUTH_STAGE_VERTICAL_FOV_DEGREES = 50;
+const AUTH_STAGE_CAMERA_DISTANCE = 12;
+const AUTH_STAGE_CENTER_NDC_X = -0.6;
+
+function authLandscapeStageX(viewportWidth, viewportHeight) {
+  const halfFovRadians = (AUTH_STAGE_VERTICAL_FOV_DEGREES * Math.PI / 180) / 2;
+  const halfVisibleWorldWidth = AUTH_STAGE_CAMERA_DISTANCE
+    * Math.tan(halfFovRadians)
+    * (Number(viewportWidth) / Number(viewportHeight));
+  return AUTH_STAGE_CENTER_NDC_X * halfVisibleWorldWidth;
+}
+
 function tileGroupPosition(page, viewportWidth, viewportHeight) {
   if (page === "lobby") return [2.5, 0.25, 0];
-  if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) return [-2.6, 0.25, 0];
+  if (Number(viewportHeight) <= 520 && Number(viewportWidth) > Number(viewportHeight)) {
+    return [authLandscapeStageX(viewportWidth, viewportHeight), 0.25, 0];
+  }
   if (Number(viewportWidth) <= 760) return [0, 1.15, 0];
   return [-2.6, 0.25, 0];
 }

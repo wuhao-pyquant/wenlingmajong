@@ -1695,36 +1695,41 @@ class PhotonFrontendTests(unittest.TestCase):
             console.log(JSON.stringify({
               desktopAuth: photon.tileGroupPosition('auth', 1280, 720),
               portraitAuth: photon.tileGroupPosition('auth', 440, 956),
-              narrowLandscapeAuth: photon.tileGroupPosition('auth', 440, 390),
+              landscapeAuth: photon.tileGroupPosition('auth', 667, 375),
+              wideLandscapeAuth: photon.tileGroupPosition('auth', 844, 390),
               lobby: photon.tileGroupPosition('lobby', 440, 390),
             }));
             """
         )
-        self.assertEqual(payload, {
-            "desktopAuth": [-2.6, 0.25, 0],
-            "portraitAuth": [0, 1.15, 0],
-            "narrowLandscapeAuth": [-2.6, 0.25, 0],
-            "lobby": [2.5, 0.25, 0],
-        })
+        self.assertEqual(payload["desktopAuth"], [-2.6, 0.25, 0])
+        self.assertEqual(payload["portraitAuth"], [0, 1.15, 0])
+        self.assertEqual(payload["lobby"], [2.5, 0.25, 0])
+        self.assertAlmostEqual(payload["landscapeAuth"][0], -5.971722393396173)
+        self.assertEqual(payload["landscapeAuth"][1:], [0.25, 0])
+        self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -7.265790710452039)
+        self.assertEqual(payload["wideLandscapeAuth"][1:], [0.25, 0])
 
     def test_three_resize_repositions_auth_tiles_and_preserves_lobby_position(self) -> None:
         probe = """
             const tileGroup = groups[0];
-            const initial = {
-              dimensions: [root.clientWidth, root.clientHeight, window.innerWidth, window.innerHeight],
-              position: tileGroup.position.values.slice(),
-            };
-            root.clientWidth = 667;
-            root.clientHeight = 375;
-            window.innerWidth = 667;
-            window.innerHeight = 375;
-            dispatch(windowListeners, 'resize');
-            return {
-              initial,
-              rotated: {
+            function snapshot() {
+              return {
                 dimensions: [root.clientWidth, root.clientHeight, window.innerWidth, window.innerHeight],
                 position: tileGroup.position.values.slice(),
-              },
+              };
+            }
+            function resize(width, height) {
+              root.clientWidth = width;
+              root.clientHeight = height;
+              window.innerWidth = width;
+              window.innerHeight = height;
+              dispatch(windowListeners, 'resize');
+              return snapshot();
+            }
+            return {
+              initial: snapshot(),
+              landscape: resize(667, 375),
+              wideLandscape: resize(844, 390),
             };
         """
         auth = self.run_browser_probe(
@@ -1744,31 +1749,31 @@ class PhotonFrontendTests(unittest.TestCase):
             injectThree=True,
         )
 
-        self.assertEqual(
-            {"auth": auth, "lobby": lobby},
-            {
-                "auth": {
-                    "initial": {
-                        "dimensions": [440, 956, 440, 956],
-                        "position": [0, 1.15, 0],
-                    },
-                    "rotated": {
-                        "dimensions": [667, 375, 667, 375],
-                        "position": [-2.6, 0.25, 0],
-                    },
-                },
-                "lobby": {
-                    "initial": {
-                        "dimensions": [440, 956, 440, 956],
-                        "position": [2.5, 0.25, 0],
-                    },
-                    "rotated": {
-                        "dimensions": [667, 375, 667, 375],
-                        "position": [2.5, 0.25, 0],
-                    },
-                },
+        self.assertEqual(auth["initial"], {
+            "dimensions": [440, 956, 440, 956],
+            "position": [0, 1.15, 0],
+        })
+        self.assertEqual(auth["landscape"]["dimensions"], [667, 375, 667, 375])
+        self.assertAlmostEqual(auth["landscape"]["position"][0], -5.971722393396173)
+        self.assertEqual(auth["landscape"]["position"][1:], [0.25, 0])
+        self.assertEqual(auth["wideLandscape"]["dimensions"], [844, 390, 844, 390])
+        self.assertAlmostEqual(auth["wideLandscape"]["position"][0], -7.265790710452039)
+        self.assertEqual(auth["wideLandscape"]["position"][1:], [0.25, 0])
+
+        self.assertEqual(lobby, {
+            "initial": {
+                "dimensions": [440, 956, 440, 956],
+                "position": [2.5, 0.25, 0],
             },
-        )
+            "landscape": {
+                "dimensions": [667, 375, 667, 375],
+                "position": [2.5, 0.25, 0],
+            },
+            "wideLandscape": {
+                "dimensions": [844, 390, 844, 390],
+                "position": [2.5, 0.25, 0],
+            },
+        })
 
     def test_reduced_motion_transitions_resolve_without_timers(self) -> None:
         payload = self.run_browser_probe(
