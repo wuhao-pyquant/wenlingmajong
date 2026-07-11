@@ -896,6 +896,15 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn(".photon-lobby-page .room-table-icon", phone)
         self.assertIn("max-width: 360px", phone)
 
+    def test_auth_visual_stage_reserves_responsive_core_space(self) -> None:
+        css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
+
+        self.assertIn(".photon-auth-page .photon-auth-visual", css)
+        self.assertIn("min-height: clamp(320px, 62vh, 680px)", css)
+        self.assertIn("grid-template-rows: minmax(240px, 1fr) auto", css)
+        self.assertIn("min-height: clamp(240px, 38svh, 360px)", css)
+        self.assertIn("min-height: 180px", css)
+
     def test_photon_css_separates_narrow_layout_from_coarse_touch_targets(self) -> None:
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
         narrow = self.css_at_rule_block(css, "@media (max-width: 760px)")
@@ -962,8 +971,7 @@ class PhotonFrontendTests(unittest.TestCase):
         css = (ROOT / "static" / "photon_lobby.css").read_text(encoding="utf-8")
         viewport_font_size = r"font-size:\s*[^;{}]*vw\b"
 
-        self.assertIn(".photon-auth-page .photon-auth-copy h1", css)
-        self.assertIn("font-size: 72px", css)
+        self.assertNotIn(".photon-auth-page .photon-auth-copy", css)
         self.assertIn(".photon-lobby-page .photon-lobby-heading h1", css)
         self.assertIn("font-size: 56px", css)
         with self.assertRaises(AssertionError):
@@ -985,7 +993,7 @@ class PhotonFrontendTests(unittest.TestCase):
             ".photon-auth-page .photon-scene-root[data-photon-status=\"loading\"]",
             ".photon-auth-page .photon-scene-root[data-photon-status=\"error\"]",
             ".photon-lobby-page .photon-scene-root[data-photon-status=\"success\"]",
-            "grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr)",
+            "grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr)",
             "overflow-y: auto",
             "box-sizing: border-box",
         ):
