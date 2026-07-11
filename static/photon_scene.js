@@ -21,13 +21,13 @@
     return current;
   }
 
-  const AUTH_STAGE_VERTICAL_FOV_DEGREES = 50;
-  const AUTH_STAGE_CAMERA_DISTANCE = 12;
+  const PHOTON_CAMERA_FOV_DEGREES = 44;
+  const PHOTON_CAMERA_DISTANCE = 12;
   const AUTH_STAGE_CENTER_NDC_X = -0.6;
 
   function authLandscapeStageX(viewportWidth, viewportHeight) {
-    const halfFovRadians = (AUTH_STAGE_VERTICAL_FOV_DEGREES * Math.PI / 180) / 2;
-    const halfVisibleWorldWidth = AUTH_STAGE_CAMERA_DISTANCE
+    const halfFovRadians = (PHOTON_CAMERA_FOV_DEGREES * Math.PI / 180) / 2;
+    const halfVisibleWorldWidth = PHOTON_CAMERA_DISTANCE
       * Math.tan(halfFovRadians)
       * (Number(viewportWidth) / Number(viewportHeight));
     return AUTH_STAGE_CENTER_NDC_X * halfVisibleWorldWidth;
@@ -266,8 +266,8 @@
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x04090b, 0.065);
-    const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 80);
-    camera.position.set(0, 0, 12);
+    const camera = new THREE.PerspectiveCamera(PHOTON_CAMERA_FOV_DEGREES, 1, 0.1, 80);
+    camera.position.set(0, 0, PHOTON_CAMERA_DISTANCE);
 
     const particleGeometry = ownGeometry(new THREE.BufferGeometry());
     const particlePositions = new Float32Array(budget.particles * 3);

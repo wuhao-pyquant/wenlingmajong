@@ -65,7 +65,8 @@ class PhotonFrontendTests(unittest.TestCase):
             with self.subTest(page=page):
                 html = (ROOT / "static" / page).read_text(encoding="utf-8")
                 for asset in assets:
-                    self.assertIn(f"{asset}?v=20260711-photon-4", html)
+                    self.assertIn(f"{asset}?v=20260711-photon-5", html)
+                self.assertNotIn("20260711-photon-4", html)
                 self.assertNotIn("20260711-photon-3", html)
                 self.assertNotIn("20260711-photon-2", html)
                 self.assertNotIn("20260710-photon-1", html)
@@ -104,8 +105,8 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertIn('class="standalone-page auth-only-page photon-auth-page"', html)
         self.assertIn('id="photonSceneRoot"', html)
         self.assertIn('data-page="auth"', html)
-        self.assertIn('/photon_lobby.css?v=20260711-photon-4', html)
-        self.assertIn('/photon_scene.js?v=20260711-photon-4', html)
+        self.assertIn('/photon_lobby.css?v=20260711-photon-5', html)
+        self.assertIn('/photon_scene.js?v=20260711-photon-5', html)
         self.assertIn('role="tablist"', html)
         self.assertIn('data-auth-mode="login"', html)
         self.assertIn('data-auth-mode="register"', html)
@@ -1704,10 +1705,25 @@ class PhotonFrontendTests(unittest.TestCase):
         self.assertEqual(payload["desktopAuth"], [-2.6, 0.25, 0])
         self.assertEqual(payload["portraitAuth"], [0, 1.15, 0])
         self.assertEqual(payload["lobby"], [2.5, 0.25, 0])
-        self.assertAlmostEqual(payload["landscapeAuth"][0], -5.971722393396173)
+        self.assertAlmostEqual(payload["landscapeAuth"][0], -5.174121458535351)
         self.assertEqual(payload["landscapeAuth"][1:], [0.25, 0])
-        self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -7.265790710452039)
+        self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -6.295350177320719)
         self.assertEqual(payload["wideLandscapeAuth"][1:], [0.25, 0])
+
+    def test_camera_and_auth_projection_share_fov_and_distance_constants(self) -> None:
+        script = (ROOT / "static" / "photon_scene.js").read_text(encoding="utf-8")
+
+        self.assertIn("const PHOTON_CAMERA_FOV_DEGREES = 44;", script)
+        self.assertIn("const PHOTON_CAMERA_DISTANCE = 12;", script)
+        self.assertIn(
+            "const halfFovRadians = (PHOTON_CAMERA_FOV_DEGREES * Math.PI / 180) / 2;",
+            script,
+        )
+        self.assertIn(
+            "new THREE.PerspectiveCamera(PHOTON_CAMERA_FOV_DEGREES, 1, 0.1, 80)",
+            script,
+        )
+        self.assertIn("camera.position.set(0, 0, PHOTON_CAMERA_DISTANCE)", script)
 
     def test_three_resize_repositions_auth_tiles_and_preserves_lobby_position(self) -> None:
         probe = """
@@ -1754,10 +1770,10 @@ class PhotonFrontendTests(unittest.TestCase):
             "position": [0, 1.15, 0],
         })
         self.assertEqual(auth["landscape"]["dimensions"], [667, 375, 667, 375])
-        self.assertAlmostEqual(auth["landscape"]["position"][0], -5.971722393396173)
+        self.assertAlmostEqual(auth["landscape"]["position"][0], -5.174121458535351)
         self.assertEqual(auth["landscape"]["position"][1:], [0.25, 0])
         self.assertEqual(auth["wideLandscape"]["dimensions"], [844, 390, 844, 390])
-        self.assertAlmostEqual(auth["wideLandscape"]["position"][0], -7.265790710452039)
+        self.assertAlmostEqual(auth["wideLandscape"]["position"][0], -6.295350177320719)
         self.assertEqual(auth["wideLandscape"]["position"][1:], [0.25, 0])
 
         self.assertEqual(lobby, {

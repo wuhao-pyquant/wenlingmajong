@@ -16,7 +16,7 @@
 - Keep the visual spacer text-free, unframed, and `aria-hidden="true"`.
 - Keep `440 x 956` free of horizontal overflow and preserve a complete bottom auth console.
 - Keep Three.js, Canvas, static fallback, lifecycle, and quality downgrade behavior unchanged.
-- Use cache token `20260711-photon-4` on both login and lobby entry pages.
+- Use cache token `20260711-photon-5` on both login and lobby entry pages.
 
 ---
 
@@ -30,7 +30,7 @@
 
 **Interfaces:**
 - Consumes: existing `.photon-auth-stage`, `.photon-auth-console`, auth element IDs, and shared Photon asset URLs.
-- Produces: `<div class="photon-auth-visual" aria-hidden="true"></div>` and shared cache token `20260711-photon-4`.
+- Produces: `<div class="photon-auth-visual" aria-hidden="true"></div>` and shared cache token `20260711-photon-5`.
 
 - [ ] **Step 1: Write the failing markup and cache tests**
 
@@ -54,15 +54,16 @@ def test_auth_page_reserves_text_free_photon_core_stage(self) -> None:
 In `test_photon_entry_pages_share_the_final_cache_token`, require:
 
 ```python
-self.assertIn(f"{asset}?v=20260711-photon-4", html)
+self.assertIn(f"{asset}?v=20260711-photon-5", html)
+self.assertNotIn("20260711-photon-4", html)
 self.assertNotIn("20260711-photon-3", html)
 ```
 
 Also update `test_auth_page_uses_photon_stage_and_preserves_contract_ids` to require:
 
 ```python
-self.assertIn('/photon_lobby.css?v=20260711-photon-4', html)
-self.assertIn('/photon_scene.js?v=20260711-photon-4', html)
+self.assertIn('/photon_lobby.css?v=20260711-photon-5', html)
+self.assertIn('/photon_scene.js?v=20260711-photon-5', html)
 ```
 
 - [ ] **Step 2: Run the tests and verify RED**
@@ -72,7 +73,7 @@ $env:PYTHONPATH='src;packages/wenling_core'
 .\.venv\Scripts\python.exe -m unittest tests.test_photon_frontend.PhotonFrontendTests.test_auth_page_reserves_text_free_photon_core_stage tests.test_photon_frontend.PhotonFrontendTests.test_photon_entry_pages_share_the_final_cache_token tests.test_photon_frontend.PhotonFrontendTests.test_auth_page_uses_photon_stage_and_preserves_contract_ids -v
 ```
 
-Expected: FAIL because `.photon-auth-copy` and `photon-3` still exist.
+Expected: cache assertions FAIL while the entry pages still reference `photon-4`; the markup assertion also fails until the text-free stage replacement is present.
 
 - [ ] **Step 3: Implement the stage and cache bump**
 
@@ -85,9 +86,9 @@ Replace `.photon-auth-copy` in `static/battle_login.html` with:
 Change the three Photon entry asset references in both HTML files to:
 
 ```html
-<link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-4" />
-<script src="/photon_scene.js?v=20260711-photon-4" defer></script>
-<script src="/battle_lobby.js?v=20260711-photon-4" defer></script>
+<link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-5" />
+<script src="/photon_scene.js?v=20260711-photon-5" defer></script>
+<script src="/battle_lobby.js?v=20260711-photon-5" defer></script>
 ```
 
 Update matching examples and assertions in `docs/superpowers/plans/2026-07-10-photon-auth-lobby.md`.
@@ -208,7 +209,7 @@ git commit -m "Reserve responsive Photon core space"
 
 **Interfaces:**
 - Consumes: `root.dataset.page`, `window.innerWidth`, `window.innerHeight`, and the existing Three.js `tileGroup`.
-- Produces: `tileGroupPosition(page, viewportWidth, viewportHeight)` returning `[x, y, z]`, exported through the CommonJS test surface and re-applied from the resize callback. Low-height landscape auth projects the left visual-column center at NDC x `-0.6` into world space using a 50-degree vertical FOV reference and camera distance `12`.
+- Produces: `tileGroupPosition(page, viewportWidth, viewportHeight)` returning `[x, y, z]`, exported through the CommonJS test surface and re-applied from the resize callback. Low-height landscape auth projects the left visual-column center at NDC x `-0.6` into world space using the shared camera FOV `44` and distance `12` constants.
 
 - [ ] **Step 1: Write the failing pure positioning test**
 
@@ -229,9 +230,9 @@ def test_tile_group_position_targets_auth_visual_stage(self) -> None:
     self.assertEqual(payload["desktopAuth"], [-2.6, 0.25, 0])
     self.assertEqual(payload["portraitAuth"], [0, 1.15, 0])
     self.assertEqual(payload["lobby"], [2.5, 0.25, 0])
-    self.assertAlmostEqual(payload["landscapeAuth"][0], -5.971722393396173)
+    self.assertAlmostEqual(payload["landscapeAuth"][0], -5.174121458535351)
     self.assertEqual(payload["landscapeAuth"][1:], [0.25, 0])
-    self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -7.265790710452039)
+    self.assertAlmostEqual(payload["wideLandscapeAuth"][0], -6.295350177320719)
     self.assertEqual(payload["wideLandscapeAuth"][1:], [0.25, 0])
 ```
 
@@ -249,13 +250,13 @@ Expected: both tests FAIL because low-height landscape auth still uses the deskt
 - [ ] **Step 3: Update and use the pure helper**
 
 ```javascript
-const AUTH_STAGE_VERTICAL_FOV_DEGREES = 50;
-const AUTH_STAGE_CAMERA_DISTANCE = 12;
+const PHOTON_CAMERA_FOV_DEGREES = 44;
+const PHOTON_CAMERA_DISTANCE = 12;
 const AUTH_STAGE_CENTER_NDC_X = -0.6;
 
 function authLandscapeStageX(viewportWidth, viewportHeight) {
-  const halfFovRadians = (AUTH_STAGE_VERTICAL_FOV_DEGREES * Math.PI / 180) / 2;
-  const halfVisibleWorldWidth = AUTH_STAGE_CAMERA_DISTANCE
+  const halfFovRadians = (PHOTON_CAMERA_FOV_DEGREES * Math.PI / 180) / 2;
+  const halfVisibleWorldWidth = PHOTON_CAMERA_DISTANCE
     * Math.tan(halfFovRadians)
     * (Number(viewportWidth) / Number(viewportHeight));
   return AUTH_STAGE_CENTER_NDC_X * halfVisibleWorldWidth;
@@ -270,6 +271,15 @@ function tileGroupPosition(page, viewportWidth, viewportHeight) {
   return [-2.6, 0.25, 0];
 }
 ```
+
+Use the same constants when constructing and positioning the live camera:
+
+```javascript
+const camera = new THREE.PerspectiveCamera(PHOTON_CAMERA_FOV_DEGREES, 1, 0.1, 80);
+camera.position.set(0, 0, PHOTON_CAMERA_DISTANCE);
+```
+
+Add a source-level regression test requiring the helper calculation, `PerspectiveCamera` constructor, and camera z position to reference `PHOTON_CAMERA_FOV_DEGREES` and `PHOTON_CAMERA_DISTANCE`, preventing projection drift.
 
 Keep `tileGroupPosition` in `testExports`, then update the initial assignment to:
 
@@ -314,8 +324,8 @@ After Gitee and NAS auto-update reach the commit, run:
 ```powershell
 $base='http://192.168.31.116:8766'
 Invoke-WebRequest -UseBasicParsing "$base/battle-login" -Headers @{'X-Forwarded-For'='192.168.1.22'}
-Invoke-WebRequest -UseBasicParsing "$base/photon_scene.js?v=20260711-photon-4" -Headers @{'X-Forwarded-For'='192.168.1.22'}
-Invoke-WebRequest -UseBasicParsing "$base/photon_lobby.css?v=20260711-photon-4" -Headers @{'X-Forwarded-For'='192.168.1.22'}
+Invoke-WebRequest -UseBasicParsing "$base/photon_scene.js?v=20260711-photon-5" -Headers @{'X-Forwarded-For'='192.168.1.22'}
+Invoke-WebRequest -UseBasicParsing "$base/photon_lobby.css?v=20260711-photon-5" -Headers @{'X-Forwarded-For'='192.168.1.22'}
 ```
 
-Expected: all requests return HTTP `200` and login HTML references `20260711-photon-4`.
+Expected: all requests return HTTP `200` and login HTML references `20260711-photon-5`.
