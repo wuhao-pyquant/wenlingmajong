@@ -836,8 +836,8 @@ Add to `PhotonFrontendTests`:
         self.assertIn('class="standalone-page auth-only-page photon-auth-page"', html)
         self.assertIn('id="photonSceneRoot"', html)
         self.assertIn('data-page="auth"', html)
-        self.assertIn('/photon_lobby.css?v=20260711-photon-3', html)
-        self.assertIn('/photon_scene.js?v=20260711-photon-3', html)
+        self.assertIn('/photon_lobby.css?v=20260711-photon-4', html)
+        self.assertIn('/photon_scene.js?v=20260711-photon-4', html)
         self.assertIn('role="tablist"', html)
         self.assertIn('data-auth-mode="login"', html)
         self.assertIn('data-auth-mode="register"', html)
@@ -891,7 +891,7 @@ Use this structure, preserving the Chinese copy and IDs:
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>温岭麻将 登录</title>
     <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
-    <link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-3" />
+    <link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-4" />
   </head>
   <body class="standalone-page auth-only-page photon-auth-page">
     <div id="photonSceneRoot" class="photon-scene-root" data-page="auth" aria-hidden="true"></div>
@@ -901,11 +901,7 @@ Use this structure, preserving the Chinese copy and IDs:
         <span class="photon-system-status"><i></i> SYSTEM ONLINE</span>
       </header>
       <section class="photon-auth-stage">
-        <div class="photon-auth-copy">
-          <span>PHOTON GAME NETWORK</span>
-          <h1>连接牌桌<br />进入对局</h1>
-          <p>温岭好友牌局 · ONLINE</p>
-        </div>
+        <div class="photon-auth-visual" aria-hidden="true"></div>
         <section class="photon-auth-console" aria-label="账号入口">
           <div class="photon-auth-tabs" role="tablist" aria-label="账号操作">
             <button type="button" role="tab" data-auth-mode="login" aria-selected="true" aria-controls="loginAuthPanel">登录</button>
@@ -931,8 +927,8 @@ Use this structure, preserving the Chinese copy and IDs:
         </section>
       </section>
     </main>
-    <script src="/photon_scene.js?v=20260711-photon-3" defer></script>
-    <script src="/battle_lobby.js?v=20260711-photon-3" defer></script>
+    <script src="/photon_scene.js?v=20260711-photon-4" defer></script>
+    <script src="/battle_lobby.js?v=20260711-photon-4" defer></script>
   </body>
 </html>
 ```
@@ -1171,7 +1167,7 @@ Use this structure:
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>温岭麻将 选桌</title>
     <link rel="stylesheet" href="/styles.css?v=20260708-lobby-split-1" />
-    <link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-3" />
+    <link rel="stylesheet" href="/photon_lobby.css?v=20260711-photon-4" />
   </head>
   <body class="standalone-page room-lobby-page photon-lobby-page">
     <div id="photonSceneRoot" class="photon-scene-root" data-page="lobby" aria-hidden="true"></div>
@@ -1206,8 +1202,8 @@ Use this structure:
         <article class="room-table-slot room-table-empty" data-slot-index="2"></article>
       </section>
     </main>
-    <script src="/photon_scene.js?v=20260711-photon-3" defer></script>
-    <script src="/battle_lobby.js?v=20260711-photon-3" defer></script>
+    <script src="/photon_scene.js?v=20260711-photon-4" defer></script>
+    <script src="/battle_lobby.js?v=20260711-photon-4" defer></script>
   </body>
 </html>
 ```
